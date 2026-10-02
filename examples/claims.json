@@ -1,0 +1,9 @@
+[
+  {
+    "claim": "Their pricing page lists transcription at $0.006 per audio minute",
+    "value": "$0.006",
+    "url": "https://example.com/pricing",
+    "checked": "2026-10-01",
+    "derived": ["0.4", "67%"]
+  }
+]
