@@ -1,0 +1,35 @@
+{
+  "registers": {
+    "cold": {
+      "words": [80, 150],
+      "sign_off": "Thanks,",
+      "required_close": "If this isn't relevant, a one-line no is fine."
+    },
+    "follow_up": {
+      "words": [40, 80],
+      "sign_off": "Thanks,\nSam"
+    }
+  },
+  "max_spaced_hyphens": 0,
+  "min_contractions": 2,
+  "banned_phrases": [
+    "I hope this finds you well",
+    "I wanted to reach out",
+    "game-changing",
+    "best-in-class",
+    "circle back",
+    "just checking in"
+  ],
+  "bold_allowed_patterns": [
+    "Acme Transcribe",
+    "\\$\\d+(?:\\.\\d+)?"
+  ],
+  "cost_assertion_patterns": [
+    "you(?:'re| are) paying",
+    "you pay",
+    "it costs you",
+    "your cost is"
+  ],
+  "own_facts": ["$0.002"],
+  "claim_max_age_days": 14
+}
