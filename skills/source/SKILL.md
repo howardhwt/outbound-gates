@@ -7,6 +7,10 @@ description: Find new companies that match the target profile and record them in
 
 Find companies worth researching. This step is wide and shallow. It does not qualify and it does not draft.
 
+## Where the files are
+
+The checker and the reference docs ship with this plugin. The plugin root is two folders above this skill: `${CLAUDE_SKILL_DIR}/../..`. If that path appears with the variable unfilled, use this skill's base directory and go up two folders. Paths below that start with `docs/`, `examples/` or `gates/` are relative to the plugin root. Drafts, claim files and CRM exports are the user's own files and stay in the working folder.
+
 ## Input
 
 - The target profile for the lane: who buys, what signal on their own site shows it.
