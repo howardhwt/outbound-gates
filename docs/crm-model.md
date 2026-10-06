@@ -19,7 +19,9 @@ If every prospect is a deal, the pipeline fills with records nobody has spoken t
 
 ## Note keywords
 
-`SOURCED`, `VERDICT`, `DRAFTED`, `SENT`, `BOUNCED`, `REPLIED`, `DQ`, `HUMAN QUEUE`
+`SOURCED`, `VERDICT`, `DRAFTED`, `SENT`, `BOUNCED`, `REPLIED`, `PROMISE`, `DQ`, `DO NOT EMAIL`, `HUMAN QUEUE`
+
+A `PROMISE` note records anything you told the account you would or would not do, such as not writing again. The pre-send check blocks on it.
 
 A keyword at the start makes a note searchable without a custom field. Any claim in a note that did not come from the account's own site, email or call carries its source URL. A claim with no source is treated as unverified and is never repeated.
 

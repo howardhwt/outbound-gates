@@ -10,6 +10,8 @@ A funnel number is only useful if someone else can recount it and get the same a
 
 ## Queries
 
+`python -m gates.funnel --crm crm.json` runs these counts, grouped by segment, on a CRM export in the shape described in `docs/crm-adapter.md`. The SQL shows the same logic for a CRM you can query directly.
+
 ```sql
 -- Contacted, by lane and segment
 SELECT lane, segment, COUNT(*)
