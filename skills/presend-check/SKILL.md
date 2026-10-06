@@ -1,11 +1,15 @@
 ---
 name: presend-check
-description: Before any email goes out, check that the account is not disqualified, that this person and their colleagues have not been contacted, and that no earlier promise is being broken.
+description: Before any email goes out, check that the account is not disqualified, that this person and their colleagues have not been contacted, and that no earlier promise is being broken. Use when asked "is it safe to send this", "has this company been contacted", or "run the pre-send check".
 ---
 
 # Pre-send check
 
 Four questions, in order. The first one blocks.
+
+## Where the files are
+
+The checker and the reference docs ship with this plugin. The plugin root is two folders above this skill: `${CLAUDE_SKILL_DIR}/../..`. If that path appears with the variable unfilled, use this skill's base directory and go up two folders. Paths below that start with `docs/`, `examples/` or `gates/` are relative to the plugin root. Drafts, claim files and CRM exports are the user's own files and stay in the working folder.
 
 ## 1. Is the account already dead?
 
@@ -32,7 +36,7 @@ Two people at one company inside a week, with no reference to each other, looks 
 With the CRM exported in the shape described in `docs/crm-adapter.md`:
 
 ```
-python -m gates.presend --crm crm.json --domain example.com --contact a@example.com
+PYTHONPATH="${CLAUDE_SKILL_DIR}/../.." python3 -m gates.presend --crm crm.json --domain example.com --contact a@example.com
 ```
 
 It exits 0 when clean and 1 when blocked. Question 3 still needs a person or an agent to read the earlier emails for angle collisions. The code only sees promises recorded as a `PROMISE` note and replies recorded as a reply date.
