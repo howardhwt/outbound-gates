@@ -138,9 +138,22 @@ Each rule exists because the failure it prevents is easy to make with a model in
 - **Emailing a disqualified account.** A check that only reads email history misses a disqualification recorded on a deal. The pre-send check reads status, deals and notes first.
 - **Counting drafts as sends.** Status moves when a person confirms the send, never when a draft is created.
 
-## Using the skills with an agent
+## Install as a plugin
 
-Each folder in `skills/` holds one `SKILL.md`: a name, a one-line description and the steps. They are plain instructions, so any agent that can read a file, search the web and reach your CRM can follow them. Give the agent the four files and the three docs they refer to, and connect it to your CRM and mail client with whatever tools you already use.
+The repository is a Claude plugin. Python 3.9 or later must be on the machine, and nothing else needs installing.
+
+In Claude Code:
+
+```
+/plugin marketplace add howardhwt/outbound-gates
+/plugin install outbound-gates@outbound-gates
+```
+
+In Claude Cowork, open the packaged `outbound-gates.plugin` file and accept it.
+
+Four skills load: `source`, `qualify`, `draft` and `presend-check`. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
+
+The skills ship with `gates/config.example.json`. Copy it, change the rules to your own, and pass your copy with `--config`.
 
 ## Adapting it
 
