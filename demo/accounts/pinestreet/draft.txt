@@ -1,0 +1,13 @@
+Hi, this is for whoever owns the transcript add-on at Pine Street. Could you forward it to them?
+
+I saw in your changelog that the add-on runs on an outside speech provider.
+
+So a question: what does a minute of audio cost you today? Your plans are public, but the cost behind them isn't.
+
+We run **Acme Transcribe** at **$0.002** per audio minute, with speaker labels included and failed jobs not billed. It takes a file upload or a stream, and it returns word-level timestamps.
+
+I'd rather you tested it on your own episodes than took my word, so I'm happy to send a key.
+
+If this isn't relevant, a one-line no is fine.
+
+Thanks,

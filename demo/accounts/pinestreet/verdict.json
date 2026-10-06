@@ -1,0 +1,10 @@
+{
+  "arm": "switch", "register": "cold", "contact": "ops@pinestreet.example",
+  "card": [
+    {"field": "What they sell", "value": "A podcast editor", "url": "https://pinestreet.example"},
+    {"field": "The signal", "value": "Per-minute transcript add-on", "url": "https://pinestreet.example/features"},
+    {"field": "Buys or builds", "value": "Buys. The changelog names the provider", "url": "https://pinestreet.example/changelog"},
+    {"field": "Listed price", "value": "not found", "url": "not found"},
+    {"field": "Contact", "value": "Role address printed on the contact page", "url": "https://pinestreet.example/contact"}
+  ]
+}
