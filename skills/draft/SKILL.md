@@ -17,16 +17,16 @@ One verdict card in, one email draft out. The draft stops at the first gate it f
    - Other arms get no draft. Say why and stop.
 4. **Run the gate checker.**
    ```
-   python -m gates draft.txt --config gates/config.json --register cold --claims claims.json
+   python -m gates draft.txt --config gates/config.example.json --register cold --claims claims.json
    ```
-   Fix what it reports and run it again. After two failed rounds, stop and report the failing rule.
-5. **Run the pre-send check.** See `skills/presend-check`.
+   Use your own copy of the config once you have one. Fix what it reports and run it again. After two failed rounds, stop and report the failing rule.
+5. **Run the pre-send check.** See `skills/presend-check`. With a CRM export on disk, `python -m gates.presend` runs the same four questions.
 6. **Create the draft in the mail client.** Include the CRM logging address in BCC so the send is recorded.
 7. **Log it at once.** Write a DRAFTED note and a SEND task on the company before starting the next account. A draft that is not logged will be written twice.
 
 ## What a draft never contains
 
-- A capability that is not on the approved capability list.
+- A capability that is not on the approved capability list in `docs/capabilities.md`.
 - A claim about quality, speed or capacity that nobody has measured.
 - A statement of what the reader pays. Quote what they list. Ask what they pay.
 - A reason the reader could use to say no.
