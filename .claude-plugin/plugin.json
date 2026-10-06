@@ -1,0 +1,9 @@
+{
+  "name": "outbound-gates",
+  "version": "0.1.0",
+  "description": "Checks that stop an AI agent from sending a bad or duplicate sales email: a draft gate checker, a pre-send CRM check, and the four procedures around them. Drafts only. A person sends.",
+  "author": { "name": "Howard Tam" },
+  "repository": "https://github.com/howardhwt/outbound-gates",
+  "license": "MIT",
+  "keywords": ["sales", "outbound", "crm", "email", "guardrails"]
+}

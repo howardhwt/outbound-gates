@@ -1,0 +1,16 @@
+{
+  "name": "outbound-gates",
+  "owner": {
+    "name": "Howard Tam"
+  },
+  "plugins": [
+    {
+      "name": "outbound-gates",
+      "source": "./",
+      "description": "Gate checker and pre-send CRM check for agent-written outbound email."
+    }
+  ],
+  "metadata": {
+    "description": "Checks that stop an AI agent from sending a bad or duplicate sales email."
+  }
+}
