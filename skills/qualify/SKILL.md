@@ -27,7 +27,7 @@ Write it as a VERDICT note on the company. Each line carries its source URL, or 
 - **supply**: they resell the capability. The pitch is margin on their listed price.
 - **expansion**: they would have to add something new. No cold email. Park it.
 - **disqualify**: wrong fit. Record the reason in a DQ note and set the status.
-- **unclear**: one question would settle it. Put that question in the human queue.
+- **unclear**: one question would settle it. Put that question in the human queue, in the format in `docs/human-queue.md`.
 
 ## Rules
 
