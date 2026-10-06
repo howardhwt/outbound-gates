@@ -1,0 +1,10 @@
+{
+  "arm": "supply", "register": "cold", "contact": "dana@northwind-audio.example",
+  "card": [
+    {"field": "What they sell", "value": "An audio API bundle for podcast tools", "url": "https://northwind-audio.example"},
+    {"field": "The signal", "value": "Resells transcription by the minute", "url": "https://northwind-audio.example/pricing"},
+    {"field": "Buys or builds", "value": "Buys. The docs credit an outside speech provider", "url": "https://northwind-audio.example/docs/providers"},
+    {"field": "Listed price", "value": "$0.006 per audio minute, checked 2026-10-02", "url": "https://northwind-audio.example/pricing"},
+    {"field": "Contact", "value": "Dana Reyes, Head of Platform, address printed on the team page", "url": "https://northwind-audio.example/team"}
+  ]
+}

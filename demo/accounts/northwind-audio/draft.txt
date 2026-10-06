@@ -1,0 +1,13 @@
+Hi Dana,
+
+I saw that Northwind's pricing page lists transcription at $0.006 per audio minute.
+
+We run **Acme Transcribe** at **$0.002** per audio minute, with speaker labels included and failed jobs not billed. It takes a file upload or a streaming connection, and it returns word-level timestamps.
+
+If your price stayed where it is, every minute you sell would clear about 0.4 cents, which is roughly 67% gross margin.
+
+Is speech supply yours to decide, or is there someone else I should write to? I'd rather send you a key to test than describe it.
+
+If this isn't relevant, a one-line no is fine.
+
+Thanks,
