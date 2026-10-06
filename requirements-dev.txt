@@ -1,0 +1,3 @@
+# Python 3.9 or newer. The gates use the standard library only.
+# This file is needed for the tests.
+pytest>=7
