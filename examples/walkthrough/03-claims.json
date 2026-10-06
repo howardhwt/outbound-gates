@@ -1,0 +1,9 @@
+[
+  {
+    "claim": "Their pricing page lists transcription at $0.006 per audio minute",
+    "value": "$0.006",
+    "url": "https://northwind-audio.example/pricing",
+    "checked": "2026-10-02",
+    "derived": ["0.4", "67%"]
+  }
+]

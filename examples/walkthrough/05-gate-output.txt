@@ -1,0 +1,3 @@
+$ python -m gates examples/walkthrough/04-draft.txt --config gates/config.example.json --register cold --claims examples/walkthrough/03-claims.json --today 2026-10-03
+[WARN] rhythm: three sentences in a row have almost the same length
+PASS
