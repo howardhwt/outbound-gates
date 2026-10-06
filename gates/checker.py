@@ -26,6 +26,19 @@ NUMBER_RE = re.compile(r"\$?\d[\d,]*(?:\.\d+)?%?")
 BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 CONTRACTION_RE = re.compile(r"\b\w+'(?:s|t|re|ve|ll|d|m)\b", re.IGNORECASE)
 SENTENCE_RE = re.compile(r"[^.!?]+[.!?]")
+URL_RE = re.compile(r"(?:https?://|www\.)\S+|\b[\w-]+(?:\.[\w-]+)+/\S*")
+TYPOGRAPHY = str.maketrans({"\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"'})
+
+# Numbers that are not facts about anyone: clock times and calendar dates.
+DEFAULT_NUMBER_IGNORE = [
+    r"\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b",
+    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?\b",
+    r"\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\b",
+]
+
+
+class UsageError(ValueError):
+    """A problem with the inputs, as opposed to a problem with the draft."""
 
 
 @dataclass(frozen=True)
@@ -38,12 +51,33 @@ class Finding:
         return f"[{self.severity.upper()}] {self.rule}: {self.message}"
 
 
+def _load_json(path: str | Path, what: str):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise UsageError(f"{what} file not found: {path}") from None
+    except json.JSONDecodeError as err:
+        raise UsageError(f"{what} file is not valid JSON: {path} ({err})") from None
+
+
 def load_config(path: str | Path) -> dict:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    config = _load_json(path, "config")
+    if not isinstance(config, dict) or "registers" not in config:
+        raise UsageError(f"config file has no 'registers' section: {path}")
+    return config
 
 
 def load_claims(path: str | Path) -> list[dict]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    claims = _load_json(path, "claims")
+    if not isinstance(claims, list):
+        raise UsageError(f"claims file must hold a list of claims: {path}")
+    return claims
+
+
+def normalise_text(text: str) -> str:
+    """Mail clients and language models produce curly quotes and Windows line
+    endings. The rules compare against plain text, so both are flattened first."""
+    return text.replace("\r\n", "\n").replace("\r", "\n").translate(TYPOGRAPHY)
 
 
 def _strip_markup(text: str) -> str:
@@ -51,7 +85,9 @@ def _strip_markup(text: str) -> str:
 
 
 def _normalise_number(token: str) -> str:
-    return token.replace(",", "").rstrip(".")
+    """Compare numbers by value: "$1,200" and "1200" are the same number.
+    A percent sign is kept, because 67 and 67% are different claims."""
+    return token.replace(",", "").replace("$", "").rstrip(".")
 
 
 def check_dashes(text: str, config: dict) -> Iterable[Finding]:
@@ -139,6 +175,11 @@ def check_claims(
     sourced: set[str] = set()
     for claim in claims:
         value = _normalise_number(str(claim.get("value", "")))
+        if not value:
+            yield Finding(
+                "claims", FAIL, f"claim {claim.get('claim', '?')!r} has no value"
+            )
+            continue
         if not claim.get("url"):
             yield Finding(
                 "claims", FAIL, f"claim {claim.get('claim', value)!r} has no source URL"
@@ -147,7 +188,16 @@ def check_claims(
         sourced.add(value)
         checked = claim.get("checked")
         if max_age and checked:
-            age = (today - datetime.strptime(checked, "%Y-%m-%d").date()).days
+            try:
+                age = (today - datetime.strptime(checked, "%Y-%m-%d").date()).days
+            except ValueError:
+                yield Finding(
+                    "claims",
+                    FAIL,
+                    f"claim {claim.get('claim', value)!r} has a checked date "
+                    f"that is not YYYY-MM-DD: {checked!r}",
+                )
+                continue
             if age > max_age:
                 yield Finding(
                     "claims",
@@ -158,7 +208,10 @@ def check_claims(
     derived = {_normalise_number(v) for c in claims for v in c.get("derived", [])}
     allowed = sourced | own_facts | derived
     seen: set[str] = set()
-    for token in NUMBER_RE.findall(_strip_markup(text)):
+    body = URL_RE.sub(" ", _strip_markup(text))
+    for pattern in config.get("number_ignore_patterns", DEFAULT_NUMBER_IGNORE):
+        body = re.sub(pattern, " ", body, flags=re.IGNORECASE)
+    for token in NUMBER_RE.findall(body):
         value = _normalise_number(token)
         if value in seen or not any(ch.isdigit() for ch in value):
             continue
@@ -188,7 +241,9 @@ def check(
     today: date | None = None,
 ) -> list[Finding]:
     if register not in config["registers"]:
-        raise ValueError(f"unknown register {register!r}")
+        known = ", ".join(sorted(config["registers"]))
+        raise UsageError(f"unknown register {register!r}. The config defines: {known}")
+    text = normalise_text(text)
     findings: list[Finding] = []
     findings += check_dashes(text, config)
     findings += check_length(text, config, register)
@@ -212,12 +267,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", required=True, help="path to the gate config JSON")
     parser.add_argument("--register", required=True, help="register name from the config")
     parser.add_argument("--claims", help="path to the claims JSON for this draft")
+    parser.add_argument(
+        "--today",
+        help="date to measure claim age from, as YYYY-MM-DD (default: the real date)",
+    )
     args = parser.parse_args(argv)
 
-    text = Path(args.draft).read_text(encoding="utf-8")
-    config = load_config(args.config)
-    claims = load_claims(args.claims) if args.claims else None
-    findings = check(text, config, args.register, claims)
+    try:
+        try:
+            text = Path(args.draft).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise UsageError(f"draft file not found: {args.draft}") from None
+        config = load_config(args.config)
+        claims = load_claims(args.claims) if args.claims else None
+        try:
+            today = (
+                datetime.strptime(args.today, "%Y-%m-%d").date() if args.today else None
+            )
+        except ValueError:
+            raise UsageError(f"--today must be YYYY-MM-DD, got {args.today!r}") from None
+        findings = check(text, config, args.register, claims, today)
+    except UsageError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 2
     for finding in findings:
         print(finding)
     if passed(findings):
