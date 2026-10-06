@@ -7,6 +7,10 @@ description: Research one sourced company, decide whether and how to approach it
 
 Turn a sourced company into a verdict: which pitch applies, to whom, and on what evidence. A draft may only use facts that appear on the verdict card.
 
+## Where the files are
+
+The checker and the reference docs ship with this plugin. The plugin root is two folders above this skill: `${CLAUDE_SKILL_DIR}/../..`. If that path appears with the variable unfilled, use this skill's base directory and go up two folders. Paths below that start with `docs/`, `examples/` or `gates/` are relative to the plugin root. Drafts, claim files and CRM exports are the user's own files and stay in the working folder.
+
 ## The verdict card
 
 Write it as a VERDICT note on the company. Each line carries its source URL, or the words "not found".
