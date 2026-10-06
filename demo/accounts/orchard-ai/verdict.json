@@ -1,0 +1,7 @@
+{
+  "arm": "expansion", "register": "cold", "contact": null,
+  "card": [
+    {"field": "What they sell", "value": "A writing assistant", "url": "https://orchard-ai.example"},
+    {"field": "The signal", "value": "No audio feature exists yet", "url": "https://orchard-ai.example/product"}
+  ]
+}
