@@ -1,0 +1,11 @@
+Hi Jo,
+
+I wanted to reach out because Kestrel has about 12,000 teams on the paid tier, and you're paying around $0.01 per audio minute for transcription today.
+
+We run **Acme Transcribe** at **$0.002** per audio minute, so you would cut that bill by 80%. It takes a file upload or a stream, and it returns word-level timestamps with speaker labels included.
+
+At your volume that adds up quickly. I'd rather you tested it on your own recordings than took my word, so I'm happy to send a key.
+
+If this isn't relevant, a one-line no is fine.
+
+Thanks,

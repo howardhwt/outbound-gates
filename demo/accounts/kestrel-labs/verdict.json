@@ -1,0 +1,10 @@
+{
+  "arm": "switch", "register": "cold", "contact": "jo@kestrel-labs.example",
+  "card": [
+    {"field": "What they sell", "value": "A meeting notes app", "url": "https://kestrel-labs.example"},
+    {"field": "The signal", "value": "Transcription is a paid tier", "url": "https://kestrel-labs.example/pricing"},
+    {"field": "Buys or builds", "value": "Buys, per a blog post. Not confirmed on a live page", "url": "not found"},
+    {"field": "Listed price", "value": "not found", "url": "not found"},
+    {"field": "Contact", "value": "Jo Park, founder, address on the about page", "url": "https://kestrel-labs.example/about"}
+  ]
+}
