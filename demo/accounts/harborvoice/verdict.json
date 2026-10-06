@@ -1,0 +1,10 @@
+{
+  "arm": "switch", "register": "cold", "contact": "ops@harborvoice.example",
+  "card": [
+    {"field": "What they sell", "value": "Voice notes for field teams", "url": "https://harborvoice.example"},
+    {"field": "The signal", "value": "Pricing page lists a third-party transcription model", "url": "https://harborvoice.example/pricing"},
+    {"field": "Buys or builds", "value": "Unclear from the site alone", "url": "not found"},
+    {"field": "Listed price", "value": "not found", "url": "not found"},
+    {"field": "Contact", "value": "Role address printed on the contact page", "url": "https://harborvoice.example/contact"}
+  ]
+}
