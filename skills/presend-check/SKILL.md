@@ -27,6 +27,16 @@ Read the earlier emails. Look for three things:
 
 Two people at one company inside a week, with no reference to each other, looks careless. Check the company, not only the person.
 
+## Running it as code
+
+With the CRM exported in the shape described in `docs/crm-adapter.md`:
+
+```
+python -m gates.presend --crm crm.json --domain example.com --contact a@example.com
+```
+
+It exits 0 when clean and 1 when blocked. Question 3 still needs a person or an agent to read the earlier emails for angle collisions. The code only sees promises recorded as a `PROMISE` note and replies recorded as a reply date.
+
 ## Report
 
 One line per account, exceptions first: blocked with the reason quoted, clean, contacted on a date with no reply, or replied. Then state once what this check cannot see: calls, social messages and sends from mailboxes that do not log to the CRM.
