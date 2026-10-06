@@ -1,0 +1,10 @@
+{
+  "arm": "switch", "register": "cold", "contact": "priya@lumen-notes.example",
+  "card": [
+    {"field": "What they sell", "value": "A meeting notes app for small teams", "url": "https://lumen-notes.example"},
+    {"field": "The signal", "value": "The docs name a third-party speech model", "url": "https://lumen-notes.example/docs/transcripts"},
+    {"field": "Buys or builds", "value": "Buys per minute from the named provider", "url": "https://lumen-notes.example/docs/transcripts"},
+    {"field": "Listed price", "value": "not found. Transcripts are bundled in the plan", "url": "not found"},
+    {"field": "Contact", "value": "Priya Nair, CTO, address on the security page", "url": "https://lumen-notes.example/security"}
+  ]
+}
