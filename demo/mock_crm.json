@@ -1,0 +1,76 @@
+{
+  "today": "2026-10-03",
+  "companies": [
+    {
+      "domain": "harborvoice.example", "alt_domains": ["getharbor.example"],
+      "name": "Harbor Voice", "status": "NEW", "lane": "transcribe", "segment": "reseller",
+      "date_contacted": null, "date_replied": null,
+      "notes": [{"date": "2026-09-20", "text": "SOURCED: lists a third-party transcription model on its pricing page. https://harborvoice.example/pricing"}],
+      "tasks": [],
+      "deals": [{"stage": "closed_lost", "dq_reason": "runs its own model in house, told a colleague in August"}]
+    },
+    {
+      "domain": "pinestreet.example", "alt_domains": [],
+      "name": "Pine Street Media", "status": "NEW", "lane": "transcribe", "segment": "app",
+      "date_contacted": null, "date_replied": null,
+      "notes": [
+        {"date": "2026-09-22", "text": "SOURCED: podcast editor with a per-minute transcript add-on. https://pinestreet.example/features"},
+        {"date": "2026-10-01", "text": "DRAFTED: first email to ops@pinestreet.example"}
+      ],
+      "tasks": [{"subject": "SEND: Pine Street Media: draft waiting for ops@pinestreet.example", "done": false}],
+      "deals": []
+    },
+    {
+      "domain": "kestrel-labs.example", "alt_domains": [],
+      "name": "Kestrel Labs", "status": "NEW", "lane": "transcribe", "segment": "app",
+      "date_contacted": null, "date_replied": null,
+      "notes": [{"date": "2026-09-25", "text": "SOURCED: meeting notes app, transcription is a paid tier. https://kestrel-labs.example/pricing"}],
+      "tasks": [], "deals": []
+    },
+    {
+      "domain": "orchard-ai.example", "alt_domains": [],
+      "name": "Orchard AI", "status": "NEW", "lane": "transcribe", "segment": "app",
+      "date_contacted": null, "date_replied": null,
+      "notes": [{"date": "2026-09-25", "text": "SOURCED: writing assistant, no audio features yet. https://orchard-ai.example/product"}],
+      "tasks": [], "deals": []
+    },
+    {
+      "domain": "quill.example", "alt_domains": [],
+      "name": "Quill", "status": "NEW", "lane": "transcribe", "segment": "reseller",
+      "date_contacted": null, "date_replied": null,
+      "notes": [{"date": "2026-09-26", "text": "SOURCED: API marketplace with a speech category. https://quill.example/models"}],
+      "tasks": [], "deals": []
+    },
+    {
+      "domain": "tidewater.example", "alt_domains": [],
+      "name": "Tidewater API", "status": "CONNECTED", "lane": "transcribe", "segment": "reseller",
+      "date_contacted": "2026-09-10", "date_replied": "2026-09-12",
+      "notes": [
+        {"date": "2026-09-10", "text": "SENT: first email", "to": "lee@tidewater.example"},
+        {"date": "2026-09-12", "text": "REPLIED: asked for a test key"}
+      ],
+      "tasks": [], "deals": [{"stage": "testing"}]
+    },
+    {
+      "domain": "ridgeline.example", "alt_domains": [],
+      "name": "Ridgeline Models", "status": "ATTEMPTED", "lane": "transcribe", "segment": "reseller",
+      "date_contacted": "2026-09-15", "date_replied": null,
+      "notes": [{"date": "2026-09-15", "text": "SENT: first email", "to": "hello@ridgeline.example"}],
+      "tasks": [], "deals": []
+    },
+    {
+      "domain": "saltmarsh.example", "alt_domains": [],
+      "name": "Saltmarsh", "status": "ATTEMPTED", "lane": "transcribe", "segment": "app",
+      "date_contacted": "2026-09-16", "date_replied": null,
+      "notes": [{"date": "2026-09-16", "text": "SENT: first email", "to": "sam@saltmarsh.example"}],
+      "tasks": [], "deals": []
+    },
+    {
+      "domain": "fieldnote.example", "alt_domains": [],
+      "name": "Fieldnote", "status": "ATTEMPTED", "lane": "transcribe", "segment": "app",
+      "date_contacted": "2026-09-18", "date_replied": null,
+      "notes": [{"date": "2026-09-18", "text": "SENT: first email", "to": "team@fieldnote.example"}],
+      "tasks": [], "deals": []
+    }
+  ]
+}

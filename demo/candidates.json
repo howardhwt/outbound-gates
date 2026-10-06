@@ -1,0 +1,8 @@
+[
+  {"domain": "northwind-audio.example", "name": "Northwind Audio", "segment": "reseller",
+   "signal": "resells transcription by the minute", "url": "https://northwind-audio.example/pricing"},
+  {"domain": "lumen-notes.example", "name": "Lumen Notes", "segment": "app",
+   "signal": "names a third-party speech model in its docs", "url": "https://lumen-notes.example/docs/transcripts"},
+  {"domain": "getharbor.example", "name": "Harbor", "segment": "reseller",
+   "signal": "lists a third-party transcription model", "url": "https://getharbor.example/pricing"}
+]
