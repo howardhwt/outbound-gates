@@ -1,0 +1,9 @@
+{
+  "arm": "unclear", "register": "cold", "contact": null,
+  "question": "Does Quill host the speech models itself or route to providers? The models page does not say.",
+  "card": [
+    {"field": "What they sell", "value": "An API marketplace", "url": "https://quill.example"},
+    {"field": "The signal", "value": "A speech category with four models", "url": "https://quill.example/models"},
+    {"field": "Buys or builds", "value": "not found", "url": "not found"}
+  ]
+}
