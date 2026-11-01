@@ -1,10 +1,16 @@
 # outbound-gates
 
+[![tests](https://github.com/howardhwt/outbound-gates/actions/workflows/test.yml/badge.svg)](https://github.com/howardhwt/outbound-gates/actions/workflows/test.yml)
+
 A small, opinionated system for running AI-assisted outbound without sending anything untrue.
 
 A language model writes a plausible cold email in seconds. The hard part is everything around it: finding the right company, proving each fact, not emailing someone twice, and keeping the CRM honest. This repo holds the parts that do that work.
 
 Everything here uses a fictional product, **Acme Transcribe**, a speech-to-text API priced at $0.002 per audio minute. Every company and domain in the examples is invented. Swap in your own product, prices and rules.
+
+![The demo run: seven accounts sourced, qualified, drafted and checked; three blocked, two parked or queued, two drafted for a person to send](docs/demo.gif)
+
+*The demo run, abridged: the funnel tables are left out.*
 
 ## Try it in one minute
 
@@ -149,7 +155,11 @@ In Claude Code:
 /plugin install outbound-gates@outbound-gates
 ```
 
-In Claude Cowork, open the packaged `outbound-gates.plugin` file and accept it.
+Or load it for one session from a release, without adding a marketplace:
+
+```
+claude --plugin-url https://github.com/howardhwt/outbound-gates/releases/latest/download/outbound-gates.zip
+```
 
 Four skills load: `source`, `qualify`, `draft` and `presend-check`. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
 
@@ -169,7 +179,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-The tests cover both gates, the demo's outcome for every account, the walkthrough files, and the awkward inputs real tools produce: curly quotes, Windows line endings, dates, URLs, malformed files and messy CRM exports. They pass on Python 3.9 through 3.13.
+The tests cover both gates, the demo's outcome for every account, the walkthrough files, and the awkward inputs real tools produce: curly quotes, Windows line endings, dates, URLs, malformed files and messy CRM exports. They run on every push against Python 3.9 through 3.14.
 
 ## Known limits
 
