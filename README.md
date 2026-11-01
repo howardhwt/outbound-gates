@@ -54,7 +54,7 @@ The terminal output then shows the funnel before and after. The contacted count 
 | `gates/funnel.py` | Runs. Recounts the funnel from a CRM export |
 | `demo/` | Runs. The pipeline end to end on a mock CRM, offline, with an HTML report of the run |
 | `skills/` | Procedures. Four instruction files an AI agent follows for sourcing, qualifying, drafting and checking |
-| A CRM or mail connector | Not included. See `docs/crm-adapter.md` for the data shape to supply |
+| `gates/hubspot.py` | Runs. Reads one HubSpot account, read only, into the shape the pre-send check uses. Other CRMs: see `docs/crm-adapter.md` |
 
 In the demo, research and drafting are read from fixture files so it needs no API key and gives the same result every time. In real use an agent does those two steps by following the skills. The gates are the same code either way.
 

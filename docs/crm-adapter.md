@@ -2,7 +2,7 @@
 
 `gates/presend.py` and `gates/funnel.py` work on a plain dictionary. The demo builds that dictionary from `demo/mock_crm.json`. To use your own CRM, build the same shape from it.
 
-This repo does not ship a connector. In an agent setup the agent reads the CRM through whatever tool it already has, and writes the export to a file or passes it straight to `presend_check`.
+For HubSpot the repo ships a read-only adapter, `gates/hubspot.py` (below). For any other CRM, build the same shape from it: in an agent setup the agent reads the CRM through whatever tool it already has, and writes the export to a file or passes it straight to `presend_check`.
 
 ## The shape
 
@@ -49,6 +49,48 @@ This repo does not ship a connector. In an agent setup the agent reads the CRM t
 | `alt_domains` | Additional domains on the company record |
 
 Other CRMs need the same seven things: a company status, two dates, two labels, notes and tasks on the company, and a reason on lost deals.
+
+## HubSpot adapter
+
+`gates/hubspot.py` reads one company and its notes, tasks, deals and logged emails, and builds the shape above. It only searches and reads: it never creates, updates or deletes a HubSpot record. Standard library only.
+
+### Credential
+
+A HubSpot Super Admin, or a user with developer tools access, creates a **Service Key** once: Settings, then Integrations, then Service Keys. Give it read access to companies, deals, notes, tasks and emails, and nothing else. An existing legacy private app token also works; HubSpot stopped allowing new private apps on 26 October 2026.
+
+```
+export HUBSPOT_SERVICE_KEY=...        # never printed by the adapter
+python -m gates.hubspot --domain example.com                      # print the export
+python -m gates.hubspot --domain example.com --out crm.json       # save it
+python -m gates.hubspot --domain example.com --contact a@example.com --config my-config.json
+                                                                   # run the pre-send check
+```
+
+No one needs to be logged in to HubSpot when it runs. It works from a script, a scheduled job or an agent.
+
+### What it reads, and how it maps
+
+| This repo | HubSpot | Default |
+|---|---|---|
+| `status` | Lead Status, through `status_map` | `hs_lead_status`; `ATTEMPTED_TO_CONTACT` becomes `ATTEMPTED`, other values pass through |
+| `deals[].dq_reason` | the closed-lost reason, never the stage | `closed_lost_reason`. Stage values are pipeline IDs that differ per account |
+| `notes` | notes on the company, HTML stripped | a `SENT` note's first email address becomes `to` |
+| `notes` (extra) | logged outgoing emails (`EMAIL`, `FORWARDED_EMAIL`) | each recipient becomes a `SENT` note; `BOUNCED`, `FAILED` and `DRAFT` are skipped |
+| `notes` (extra) | logged incoming emails | each becomes a `REPLIED` note |
+| `tasks[].done` | task status | only `COMPLETED` is done; `WAITING`, `DEFERRED` and the rest stay open |
+| `date_contacted` | a mapped property, or the first logged outgoing email | derived |
+| `date_replied` | a mapped property, or the first logged incoming email | derived |
+| `lane`, `segment`, `alt_domains` | mapped properties | not mapped |
+
+Set the mapping in the `hubspot` section of your config (see `gates/config.example.json`).
+
+### What it cannot see, and says so
+
+Every run prints warnings for what is not mapped. With the defaults:
+
+- An auto-reply counts as a reply, so the check can block an account that has not really answered. That errs toward a person looking, not toward a second cold email.
+- Sends and replies from mailboxes that do not log to HubSpot are invisible.
+- A company filed under a second domain is not matched unless you map an alternate-domain property. If several companies share the domain, their records are combined and the adapter tells you to merge them.
 
 ## What to check after connecting
 
