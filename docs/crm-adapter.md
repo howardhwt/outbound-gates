@@ -20,7 +20,9 @@ For HubSpot the repo ships a read-only adapter, `gates/hubspot.py` (below). For 
       "date_replied": null,
       "notes": [{"date": "2026-10-01", "text": "SENT: first email", "to": "a@example.com"}],
       "tasks": [{"subject": "SEND: Example: draft waiting for a@example.com", "done": false}],
-      "deals": [{"stage": "closed_lost", "dq_reason": "builds in house"}]
+      "deals": [{"stage": "closed_lost", "dq_reason": "builds in house"}],
+      "owner": "rep-1",
+      "contacts": [{"email": "a@example.com", "blocked": null, "in_sequence": false, "unanswered_touches": 1}]
     }
   ]
 }
@@ -35,6 +37,10 @@ For HubSpot the repo ships a read-only adapter, `gates/hubspot.py` (below). For 
 | `notes[].to` | pre-send | The address a `SENT` note went to |
 | `tasks[].subject`, `done` | pre-send | An open `SEND` task blocks a second draft |
 | `deals[].dq_reason` | pre-send | Any value blocks a send |
+| `owner` | pre-send | Optional. With `--owner`, an account owned by someone else is blocked |
+| `contacts[].blocked` | pre-send | Optional. Any value blocks that contact, with the value as the reason |
+| `contacts[].in_sequence` | pre-send | Optional. True blocks: the contact is already being emailed by a sequence |
+| `contacts[].unanswered_touches` | pre-send | Optional. With `--max-unanswered`, reaching the limit blocks |
 
 ## Mapping it onto HubSpot
 
@@ -81,6 +87,10 @@ No one needs to be logged in to HubSpot when it runs. It works from a script, a 
 | `date_contacted` | a mapped property, or the first logged outgoing email | derived |
 | `date_replied` | a mapped property, or the first logged incoming email | derived |
 | `lane`, `segment`, `alt_domains` | mapped properties | not mapped |
+| `owner` | company owner | `hubspot_owner_id`; checked when you pass `--sender-owner-id` |
+| `contacts[].blocked` | contact properties in `contact_block_properties` | unsubscribed from all email, or hard bounced. Add your own, such as an outreach-block property |
+| `contacts[].in_sequence` | "Currently in Sequence" | `hs_sequences_is_enrolled`. HubSpot sequences only |
+| `contacts[].unanswered_touches` | a mapped number property, with `max_unanswered_touches` | not mapped |
 
 Set the mapping in the `hubspot` section of your config (see `gates/config.example.json`).
 
@@ -90,6 +100,9 @@ Every run prints warnings for what is not mapped. With the defaults:
 
 - An auto-reply counts as a reply, so the check can block an account that has not really answered. That errs toward a person looking, not toward a second cold email.
 - Sends and replies from mailboxes that do not log to HubSpot are invisible.
+- The sequence check sees HubSpot sequences only. A contact enrolled in another sending tool is invisible unless that tool writes to a contact property you map.
+- Without `--sender-owner-id`, two people can both pass the check on the same account.
+- Disqualification is per company, not per product line. If you pursue one company for several products and disqualify only one, the check does not know which product a draft is for.
 - A company filed under a second domain is not matched unless you map an alternate-domain property. If several companies share the domain, their records are combined and the adapter tells you to merge them.
 
 ## What to check after connecting

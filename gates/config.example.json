@@ -51,6 +51,14 @@
     "segment_property": null,
     "date_contacted_property": null,
     "date_replied_property": null,
-    "alt_domains_property": null
+    "alt_domains_property": null,
+    "owner_property": "hubspot_owner_id",
+    "contact_block_properties": {
+      "hs_email_optout": "unsubscribed from all email",
+      "hs_email_hard_bounce_reason_enum": "hard bounced"
+    },
+    "contact_sequence_property": "hs_sequences_is_enrolled",
+    "contact_unanswered_property": null,
+    "max_unanswered_touches": null
   }
 }

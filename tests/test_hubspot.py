@@ -21,8 +21,9 @@ class FakeHubSpot:
     """Answers the four endpoints the adapter uses, from in-memory records."""
 
     def __init__(self, companies=None, notes=None, tasks=None, deals=None, emails=None,
-                 links=None, page_size=500, fail_first=0):
+                 links=None, page_size=500, fail_first=0, contacts=None):
         self.companies = companies or []
+        self.contacts = contacts or []
         self.records = {"notes": notes or {}, "tasks": tasks or {}, "deals": deals or {}, "emails": emails or {}}
         self.links = links or {}  # (company_id, type) -> [ids]
         self.page_size = page_size
@@ -40,6 +41,10 @@ class FakeHubSpot:
             wanted = {f["filters"][0]["value"] for f in data["filterGroups"]}
             hits = [c for c in self.companies if c["properties"].get("domain") in wanted]
             return 200, {}, json.dumps({"results": hits}).encode()
+        if path == "/crm/v3/objects/contacts/search":
+            wanted = data["filterGroups"][0]["filters"][0]["value"]
+            hits = [c for c in self.contacts if c["properties"].get("email", "").lower() == wanted]
+            return 200, {}, json.dumps({"results": hits[:1]}).encode()
         m = re.match(r"/crm/v4/objects/companies/(\w+)/associations/(\w+)\?limit=\d+(?:&after=(\d+))?", path)
         if m:
             ids = self.links.get((m.group(1), m.group(2)), [])
@@ -209,3 +214,45 @@ def test_cli_runs_presend_and_blocks(monkeypatch, capsys):
     assert main(["--domain", "acme.example", "--contact", "a@acme.example", "--today", "2026-10-03"], transport=fake) == 1
     out = capsys.readouterr()
     assert "BLOCKED" in out.out and "pat-test" not in out.out + out.err
+
+
+# Owner claim and contact blocks, from built-in HubSpot properties
+
+def person(**props):
+    return {"id": "50", "properties": {"email": "a@acme.example", **props}}
+
+
+def presend_rules(fake, sender_owner=None, mapping=None):
+    crm, _ = export(client(fake), "acme.example", mapping or load_mapping(None), contact="a@acme.example")
+    found = presend_check(crm, "acme.example", "a@acme.example", today=TODAY, sender_owner=sender_owner,
+                          max_unanswered=(mapping or {}).get("max_unanswered_touches"))
+    return {f.rule for f in found if f.severity == FAIL}
+
+
+def test_company_owned_by_another_rep_is_blocked():
+    fake = FakeHubSpot([acme(hubspot_owner_id="1002")])
+    assert "owned_by_other" in presend_rules(fake, sender_owner="1001")
+    assert "owned_by_other" not in presend_rules(fake, sender_owner="1002")
+
+
+@pytest.mark.parametrize("props,rule", [
+    ({"hs_email_optout": "true"}, "contact_blocked"),
+    ({"hs_email_hard_bounce_reason_enum": "UNKNOWN_USER"}, "contact_blocked"),
+    ({"hs_sequences_is_enrolled": "true"}, "in_sequence"),
+])
+def test_builtin_contact_flags_block(props, rule):
+    assert rule in presend_rules(FakeHubSpot([acme()], contacts=[person(**props)]))
+
+
+def test_false_flags_and_unknown_contact_do_not_block():
+    clean = person(hs_email_optout="false", hs_sequences_is_enrolled="false", hs_email_hard_bounce_reason_enum="")
+    assert not presend_rules(FakeHubSpot([acme()], contacts=[clean]))
+    assert not presend_rules(FakeHubSpot([acme()]))
+
+
+def test_custom_block_and_touch_limit_mapping():
+    mapping = load_mapping(None)
+    mapping["contact_block_properties"] = {**mapping["contact_block_properties"], "outreach_block": "outreach block set"}
+    mapping.update(contact_unanswered_property="unanswered_touches", max_unanswered_touches=4)
+    fake = FakeHubSpot([acme()], contacts=[person(outreach_block="Asked to stop", unanswered_touches="4")])
+    assert {"contact_blocked", "touch_limit"} <= presend_rules(fake, mapping=mapping)

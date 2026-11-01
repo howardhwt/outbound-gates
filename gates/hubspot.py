@@ -52,6 +52,17 @@ DEFAULTS = {
     "date_contacted_property": None,
     "date_replied_property": None,
     "alt_domains_property": None,
+    # Owner claim. Compared with --sender-owner-id; no id given means no check.
+    "owner_property": "hubspot_owner_id",
+    # Contact blocks, read only for the --contact address.
+    # Any truthy value in these properties blocks the contact, with the label as the reason.
+    "contact_block_properties": {
+        "hs_email_optout": "unsubscribed from all email",
+        "hs_email_hard_bounce_reason_enum": "hard bounced",
+    },
+    "contact_sequence_property": "hs_sequences_is_enrolled",
+    "contact_unanswered_property": None,
+    "max_unanswered_touches": None,
 }
 
 # Transport: (method, url, headers, body) -> (status, headers, body)
@@ -184,9 +195,38 @@ def coverage_warnings(mapping: dict) -> list[str]:
         warnings.append("contacted date comes from logged outgoing emails; sends that were not logged are missed")
     if not mapping.get("alt_domains_property"):
         warnings.append("no alternate-domain property mapped: a company under a second domain is not matched")
+    if not mapping.get("contact_unanswered_property") or mapping.get("max_unanswered_touches") is None:
+        warnings.append("no unanswered-touches property and limit mapped: the touch limit is off")
+    if mapping.get("contact_sequence_property"):
+        warnings.append("sequence check sees HubSpot sequences only; other sending tools are invisible unless "
+                        "they write to a mapped contact property")
     if not mapping.get("lane_property") or not mapping.get("segment_property"):
         warnings.append("lane or segment not mapped: the funnel cannot group by them")
     return warnings
+
+
+def _truthy(value) -> bool:
+    return str(value or "").strip().lower() not in ("", "false", "0", "none", "null")
+
+
+def read_contact(client: HubSpot, email: str, mapping: dict) -> dict | None:
+    """The one contact a draft is for, with its block, sequence and touch fields."""
+    blocks = mapping.get("contact_block_properties") or {}
+    props = ["email", *blocks, mapping.get("contact_sequence_property"), mapping.get("contact_unanswered_property")]
+    body = {"filterGroups": [{"filters": [{"propertyName": "email", "operator": "EQ", "value": email.strip().lower()}]}],
+            "properties": [p for p in props if p], "limit": 1}
+    results = client._call("POST", "/crm/v3/objects/contacts/search", body).get("results", [])
+    if not results:
+        return None
+    cp = results[0].get("properties", {})
+    reasons = [label for prop, label in blocks.items() if _truthy(cp.get(prop))]
+    touches = cp.get(mapping["contact_unanswered_property"]) if mapping.get("contact_unanswered_property") else None
+    return {
+        "email": (cp.get("email") or email).lower(),
+        "blocked": "; ".join(reasons) or None,
+        "in_sequence": _truthy(cp.get(mapping["contact_sequence_property"])) if mapping.get("contact_sequence_property") else False,
+        "unanswered_touches": int(float(touches)) if str(touches or "").replace(".", "", 1).isdigit() else None,
+    }
 
 
 def build_company(client: HubSpot, domain: str, mapping: dict) -> tuple[dict | None, list[str]]:
@@ -195,6 +235,7 @@ def build_company(client: HubSpot, domain: str, mapping: dict) -> tuple[dict | N
         "domain", "name", mapping["status_property"], mapping.get("lane_property"),
         mapping.get("segment_property"), mapping.get("date_contacted_property"),
         mapping.get("date_replied_property"), mapping.get("alt_domains_property"),
+        mapping.get("owner_property"),
     ) if p]
     matches = client.find_companies(domain, company_props)
     if not matches:
@@ -215,7 +256,8 @@ def build_company(client: HubSpot, domain: str, mapping: dict) -> tuple[dict | N
         "segment": props.get(mapping["segment_property"]) if mapping.get("segment_property") else None,
         "date_contacted": _day(props.get(mapping["date_contacted_property"])) if mapping.get("date_contacted_property") else None,
         "date_replied": _day(props.get(mapping["date_replied_property"])) if mapping.get("date_replied_property") else None,
-        "notes": [], "tasks": [], "deals": [],
+        "owner": (props.get(mapping["owner_property"]) or None) if mapping.get("owner_property") else None,
+        "notes": [], "tasks": [], "deals": [], "contacts": [],
     }
 
     sent_days, replied_days = [], []
@@ -270,8 +312,12 @@ def build_company(client: HubSpot, domain: str, mapping: dict) -> tuple[dict | N
     return company, warnings
 
 
-def export(client: HubSpot, domain: str, mapping: dict) -> tuple[dict, list[str]]:
+def export(client: HubSpot, domain: str, mapping: dict, contact: str | None = None) -> tuple[dict, list[str]]:
     company, warnings = build_company(client, domain, mapping)
+    if company and contact:
+        person = read_contact(client, contact, mapping)
+        if person:
+            company["contacts"].append(person)
     return {"companies": [company] if company else []}, warnings + coverage_warnings(mapping)
 
 
@@ -289,6 +335,7 @@ def main(argv: list[str] | None = None, transport: Transport = urllib_transport)
     parser.add_argument("--config", help="config file with a 'hubspot' mapping section")
     parser.add_argument("--out", help="write the export to this file instead of printing it")
     parser.add_argument("--today", help="YYYY-MM-DD for the pre-send check (default: the real date)")
+    parser.add_argument("--sender-owner-id", help="your HubSpot owner id; blocks accounts owned by someone else")
     args = parser.parse_args(argv)
 
     try:
@@ -299,7 +346,8 @@ def main(argv: list[str] | None = None, transport: Transport = urllib_transport)
             except ValueError:
                 raise UsageError(f"--today must be YYYY-MM-DD, got {args.today!r}") from None
         client = HubSpot(_token(), transport=transport)
-        crm, warnings = export(client, args.domain, load_mapping(args.config))
+        mapping = load_mapping(args.config)
+        crm, warnings = export(client, args.domain, mapping, args.contact)
     except UsageError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
@@ -315,7 +363,10 @@ def main(argv: list[str] | None = None, transport: Transport = urllib_transport)
             print(json.dumps(crm, indent=2))
         return 0
 
-    findings = presend_check(crm, args.domain, args.contact, today)
+    if not args.sender_owner_id:
+        print("warning: no --sender-owner-id given: the owner-claim check is off", file=sys.stderr)
+    findings = presend_check(crm, args.domain, args.contact, today, sender_owner=args.sender_owner_id,
+                             max_unanswered=mapping.get("max_unanswered_touches"))
     for finding in findings:
         print(finding)
     print(BLIND_SPOTS)
