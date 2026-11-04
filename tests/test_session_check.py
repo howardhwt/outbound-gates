@@ -1,5 +1,6 @@
 """hooks/session_check.py: the plugin heartbeat and the user-level watchdog."""
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -225,3 +226,141 @@ def test_guard_script_end_to_end(env):
     assert is_deny(run("draft-guard", payload).stdout)
     run("plugin", json.dumps({"session_id": "e2e", "source": "startup"}))
     assert run("draft-guard", payload).stdout == ""
+
+
+# --- backstop, stale copy, policy warnings, selftest, wrapper (installable net) ---
+
+@pytest.mark.parametrize("tool,names,hit", [
+    ("slack_send_message", ["send_message"], True),
+    ("sendEmail", ["send_email"], True),
+    ("send-mail", ["send_mail"], True),
+    ("apollo_emailer_messages_send_now", ["send_now"], True),
+    ("port_forward_list", ["forward"], False),
+    ("resend_message", ["send_message"], False),
+    ("list_drafts", ["send_message", "create_draft"], False),
+])
+def test_name_matches_by_whole_trailing_words(tool, names, hit):
+    assert sc.name_matches(tool, names) is hit
+
+
+@pytest.mark.parametrize("tool", ["mcp__self_hosted__sendEmail", "mcp__claude_ai_Slack__slack_send_message",
+                                  "mcp__other__apollo_sequences_create", "mcp__x__reply"])
+def test_guard_denies_send_tools_from_any_server_in_gated_projects(env, tool, monkeypatch, tmp_path):
+    _, project, _ = env
+    monkeypatch.setattr(sc, "NET_DIR", tmp_path / "net")  # no blocked.json: built-in names
+    names = ["apollo_sequences_create"]
+    (project / ".gates" / "config.json").write_text(json.dumps({"blocked_tools": names}))
+    assert is_deny(sc.draft_guard({"tool_name": tool, "cwd": str(project)}, {}))
+
+
+def test_guard_ignores_send_tools_outside_gated_projects(tmp_path):
+    assert sc.draft_guard({"tool_name": "mcp__x__send_email", "cwd": str(tmp_path)}, {}) == ""
+
+
+def test_guard_reads_names_from_blocked_json(env, monkeypatch, tmp_path):
+    _, project, _ = env
+    netdir = tmp_path / "net"
+    netdir.mkdir()
+    (netdir / "blocked.json").write_text(json.dumps({"guard_names": ["blast_campaign"]}))
+    monkeypatch.setattr(sc, "NET_DIR", netdir)
+    assert is_deny(sc.draft_guard({"tool_name": "mcp__x__blast_campaign", "cwd": str(project)}, {}))
+    assert sc.draft_guard({"tool_name": "mcp__x__send_email", "cwd": str(project)}, {}) == ""
+
+
+def test_stale_copy_warns_when_plugin_is_newer(env, monkeypatch):
+    home, project, path = env
+    install(home, path, project=project)  # version 0.1.0
+    monkeypatch.setattr(sc, "VERSION", "0.0.9")
+    assert "older than the plugin (0.1.0)" in sc.stale_copy(project, home)
+    monkeypatch.setattr(sc, "VERSION", "0.1.0")
+    assert sc.stale_copy(project, home) == ""
+    monkeypatch.setattr(sc, "VERSION", "dev")
+    assert sc.stale_copy(project, home) == ""
+
+
+def test_watchdog_reports_a_stale_copy(env, monkeypatch):
+    home, project, path = env
+    install(home, path, project=project)
+    enable(project / ".claude" / "settings.local.json")
+    monkeypatch.setattr(sc, "VERSION", "0.0.1")
+    assert "older than the plugin" in json.loads(run_watchdog(home, project))["systemMessage"]
+
+
+def test_policy_warnings(env, tmp_path):
+    home, project, _ = env
+    managed = tmp_path / "managed.json"
+    managed.write_text(json.dumps({"allowManagedHooksOnly": True, "allowManagedPermissionRulesOnly": True}))
+    write(project / ".claude" / "settings.local.json", {"disableAllHooks": True})
+    warnings = " ".join(sc.policy_warnings(project, home, [managed]))
+    assert "allowManagedHooksOnly" in warnings and "allowManagedPermissionRulesOnly" in warnings
+    assert "local settings" in warnings and "disableAllHooks" in warnings
+    assert sc.policy_warnings(tmp_path / "nowhere", tmp_path / "nohome", []) == []
+
+
+def test_selftest_fails_when_nothing_is_installed(env, monkeypatch, tmp_path):
+    home, project, _ = env
+    monkeypatch.setattr(sc, "NET_DIR", tmp_path / "net")
+    passed, lines = sc.selftest(project, home, [])
+    assert not passed
+    assert any(l.startswith("FAIL") and "PreToolUse" in l for l in lines)
+
+
+@pytest.mark.parametrize("mode,expect", [("draft-guard", "permissionDecision"), ("watchdog", "systemMessage")])
+def test_wrapper_fails_safe_when_python_is_missing(tmp_path, mode, expect):
+    (tmp_path / ".gates").mkdir()
+    proc = subprocess.run(["sh", str(ROOT / "hooks" / "gate-net.sh"), mode], input="{}", capture_output=True, text=True,
+                          env={"PATH": "/usr/bin:/bin", "CLAUDE_PROJECT_DIR": str(tmp_path), "GATE_PYTHON": "/nonexistent"})
+    assert proc.returncode == 0
+    out = json.loads(proc.stdout)
+    assert expect in json.dumps(out)
+    if mode == "draft-guard":
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_wrapper_passes_outside_gated_projects_even_when_broken(tmp_path):
+    proc = subprocess.run(["sh", str(ROOT / "hooks" / "gate-net.sh"), "draft-guard"], input="{}", capture_output=True,
+                          text=True, env={"PATH": "/usr/bin:/bin", "CLAUDE_PROJECT_DIR": str(tmp_path),
+                                          "GATE_PYTHON": "/nonexistent"})
+    assert proc.returncode == 0 and proc.stdout == ""
+
+
+def test_wrapper_passes_the_guard_answer_through(tmp_path):
+    (tmp_path / ".gates").mkdir()
+    proc = subprocess.run(["sh", str(ROOT / "hooks" / "gate-net.sh"), "draft-guard"],
+                          input=json.dumps({"tool_name": "mcp__x__send_email"}), capture_output=True, text=True,
+                          env={"PATH": os.environ["PATH"], "CLAUDE_PROJECT_DIR": str(tmp_path)})
+    assert "is a send tool" in proc.stdout
+
+
+# --- red-team quick wins ---
+
+def set_up_project(tmp_path, monkeypatch, project):
+    netdir = tmp_path / "net"
+    netdir.mkdir(exist_ok=True)
+    (netdir / "installed.json").write_text(json.dumps({"schema": 1, "projects": {str(project.resolve()): {}}}))
+    monkeypatch.setattr(sc, "NET_DIR", netdir)
+
+
+def test_guard_stays_on_when_gates_folder_is_deleted(tmp_path, monkeypatch):
+    project = tmp_path / "proj"
+    project.mkdir()  # set up by setup, but no .gates/
+    set_up_project(tmp_path, monkeypatch, project)
+    assert is_deny(sc.draft_guard({"tool_name": "mcp__x__send_email", "cwd": str(project)}, {}))
+    assert is_deny(sc.draft_guard({"tool_name": "mcp__claude_ai_Gmail__create_draft", "session_id": "s",
+                                   "cwd": str(project)}, {}))
+
+
+def test_watchdog_warns_when_gates_folder_is_deleted(tmp_path, monkeypatch):
+    project = tmp_path / "proj"
+    project.mkdir()
+    set_up_project(tmp_path, monkeypatch, project)
+    out = json.loads(sc.watchdog({"cwd": str(project)}, {}, tmp_path / "home"))
+    assert ".gates/ folder is missing" in out["systemMessage"]
+
+
+def test_projects_never_set_up_stay_untouched(tmp_path, monkeypatch):
+    set_up_project(tmp_path, monkeypatch, tmp_path / "elsewhere")
+    other = tmp_path / "other"
+    other.mkdir()
+    assert sc.watchdog({"cwd": str(other)}, {}, tmp_path / "home") == ""
+    assert sc.draft_guard({"tool_name": "mcp__x__send_email", "cwd": str(other)}, {}) == ""

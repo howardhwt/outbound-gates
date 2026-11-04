@@ -1,5 +1,5 @@
 {
-  "_comment": "Defaults for the Claude Code send gate. A project overrides register, sender_owner, max_unanswered, crm_path and example_pages in <project>/.gates/config.json. It can only add to blocked_tools and banned_phrases. source_allowlist is read only from ~/.config/outbound-gates/config.json. blocked_tools holds the send tools of other channels (Apollo, Slack), matched by the part of the name after the last '__'. See docs/send-gate.md.",
+  "_comment": "Defaults for the Claude Code send gate. A project overrides register, sender_owner, max_unanswered, crm_path and example_pages in <project>/.gates/config.json. It can only add to blocked_tools and banned_phrases. source_allowlist is read only from ~/.config/outbound-gates/config.json. blocked_tools holds the send tools of other channels (Apollo, Slack), matched by the part of the name after the last '__'. See docs/send-gate.md. send_words and deny_rules feed gates/setup.py: deny_rules lists per-server tool names written as project deny rules (Apollo's come from the apollo_ names in blocked_tools); send_words are matched by the user-level guard on any server.",
   "rules": "config.example.json",
   "register": "cold",
   "sender_owner": null,
@@ -16,6 +16,36 @@
     "apollo_agent_workflow_automation",
     "apollo_agent_optimize_sequences",
     "slack_send_message",
-    "slack_schedule_message"
-  ]
+    "slack_schedule_message",
+    "apollo_website_visitor_domain_tracker_send_install_email",
+    "scenarios_run",
+    "rpc_execute"
+  ],
+  "send_words": [
+    "send_message",
+    "send_email",
+    "send_mail",
+    "reply",
+    "forward",
+    "schedule_message",
+    "send_now",
+    "post_message",
+    "send_sms",
+    "send_invite"
+  ],
+  "deny_rules": {
+    "claude_ai_Gmail": [
+      "send_message",
+      "reply",
+      "forward"
+    ],
+    "claude_ai_Slack": [
+      "slack_send_message",
+      "slack_schedule_message"
+    ],
+    "claude_ai_Make": [
+      "scenarios_run",
+      "rpc_execute"
+    ]
+  }
 }
