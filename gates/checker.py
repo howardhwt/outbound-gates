@@ -11,6 +11,7 @@ in the review step, not here.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -84,10 +85,54 @@ def _strip_markup(text: str) -> str:
     return text.replace("**", "")
 
 
-def _normalise_number(token: str) -> str:
+def normalise_number(token: str) -> str:
     """Compare numbers by value: "$1,200" and "1200" are the same number.
     A percent sign is kept, because 67 and 67% are different claims."""
     return token.replace(",", "").replace("$", "").rstrip(".")
+
+
+_normalise_number = normalise_number  # older name, kept for existing callers
+
+
+def extract_numbers(
+    text: str, ignore_patterns: Iterable[str] = DEFAULT_NUMBER_IGNORE
+) -> list[tuple[str, str]]:
+    """Every number in the text as (token as written, normalised value).
+
+    The draft check and the source check both read numbers through this one
+    function, so "$1,200" in a draft and "1,200" in a quoted page always
+    compare as the same number. URLs, clock times and dates are skipped.
+    """
+    body = URL_RE.sub(" ", _strip_markup(text))
+    for pattern in ignore_patterns:
+        body = re.sub(pattern, " ", body, flags=re.IGNORECASE)
+    numbers = []
+    for token in NUMBER_RE.findall(body):
+        value = normalise_number(token)
+        if any(ch.isdigit() for ch in value):
+            numbers.append((token, value))
+    return numbers
+
+
+_HIDDEN_BLOCK_RE = re.compile(r"<(script|style|noscript|template)\b.*?</\1\s*>", re.I | re.S)
+_BREAK_RE = re.compile(r"<br\s*/?>|</(?:p|div|li|tr|h[1-6]|section|article|td|th)\s*>", re.I)
+_TAG_RE = re.compile(r"<[^>]+>")
+_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+
+def html_to_text(markup: str) -> str:
+    """Reduce HTML to the text a reader sees.
+
+    Script, style and template blocks are dropped entirely, so text hidden in
+    page code can never count as something the page says.
+    """
+    text = _COMMENT_RE.sub(" ", markup or "")
+    text = _HIDDEN_BLOCK_RE.sub(" ", text)
+    text = _BREAK_RE.sub("\n", text)
+    text = _TAG_RE.sub(" ", text)
+    text = html.unescape(text).replace("\u00a0", " ")
+    lines = (" ".join(line.split()) for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
 
 
 def check_dashes(text: str, config: dict) -> Iterable[Finding]:
@@ -165,25 +210,39 @@ def check_cost_assertions(text: str, config: dict) -> Iterable[Finding]:
 
 
 def check_claims(
-    text: str, config: dict, claims: list[dict] | None, today: date | None = None
+    text: str,
+    config: dict,
+    claims: list[dict] | None,
+    today: date | None = None,
+    verified: Iterable[int] | None = None,
 ) -> Iterable[Finding]:
-    """Every number in the draft needs a sourced claim behind it."""
+    """Every number in the draft needs a sourced claim behind it.
+
+    ``verified`` is None for the plain checker: a claim with a value and a URL
+    counts as sourced, and its ``derived`` values are allowed. The send gate
+    passes the indices of the claims whose stored evidence verified. Then only
+    those claims count, ``derived`` values are ignored, and an unverified claim
+    blocks only a draft that uses its number.
+    """
     if claims is None:
         return
+    evidence_mode = verified is not None
+    verified_ids = set(verified or ())
     today = today or date.today()
     max_age = config.get("claim_max_age_days")
     sourced: set[str] = set()
-    for claim in claims:
-        value = _normalise_number(str(claim.get("value", "")))
+    unverified: dict[str, str] = {}
+    for index, claim in enumerate(claims):
+        value = normalise_number(str(claim.get("value", "")))
+        name = claim.get("claim", value or "?")
         if not value:
-            yield Finding(
-                "claims", FAIL, f"claim {claim.get('claim', '?')!r} has no value"
-            )
+            yield Finding("claims", FAIL, f"claim {name!r} has no value")
             continue
         if not claim.get("url"):
-            yield Finding(
-                "claims", FAIL, f"claim {claim.get('claim', value)!r} has no source URL"
-            )
+            yield Finding("claims", FAIL, f"claim {name!r} has no source URL")
+            continue
+        if evidence_mode and index not in verified_ids:
+            unverified.setdefault(value, name)
             continue
         sourced.add(value)
         checked = claim.get("checked")
@@ -194,30 +253,42 @@ def check_claims(
                 yield Finding(
                     "claims",
                     FAIL,
-                    f"claim {claim.get('claim', value)!r} has a checked date "
-                    f"that is not YYYY-MM-DD: {checked!r}",
+                    f"claim {name!r} has a checked date that is not YYYY-MM-DD: {checked!r}",
                 )
                 continue
             if age > max_age:
-                yield Finding(
-                    "claims",
-                    WARN,
-                    f"claim {claim.get('claim', value)!r} was checked {age} days ago",
-                )
-    own_facts = {_normalise_number(v) for v in config.get("own_facts", [])}
-    derived = {_normalise_number(v) for c in claims for v in c.get("derived", [])}
+                yield Finding("claims", WARN, f"claim {name!r} was checked {age} days ago")
+    own_facts = {normalise_number(v) for v in config.get("own_facts", [])}
+    derived = (
+        set()
+        if evidence_mode
+        else {normalise_number(v) for c in claims for v in c.get("derived", [])}
+    )
     allowed = sourced | own_facts | derived
     seen: set[str] = set()
-    body = URL_RE.sub(" ", _strip_markup(text))
-    for pattern in config.get("number_ignore_patterns", DEFAULT_NUMBER_IGNORE):
-        body = re.sub(pattern, " ", body, flags=re.IGNORECASE)
-    for token in NUMBER_RE.findall(body):
-        value = _normalise_number(token)
-        if value in seen or not any(ch.isdigit() for ch in value):
+    ignore = config.get("number_ignore_patterns", DEFAULT_NUMBER_IGNORE)
+    for token, value in extract_numbers(text, ignore):
+        if value in seen:
             continue
         seen.add(value)
-        if value not in allowed:
+        if value in allowed:
+            continue
+        if value in unverified:
+            yield Finding(
+                "claims_unverified",
+                FAIL,
+                f"the number {token!r} rests on claim {unverified[value]!r}, "
+                "which has no verified stored source",
+            )
+        else:
             yield Finding("claims", FAIL, f"the number {token!r} has no sourced claim")
+    for value, name in unverified.items():
+        if value not in seen and value not in allowed:
+            yield Finding(
+                "claims_unverified",
+                WARN,
+                f"claim {name!r} has no verified stored source (its number is not in this draft)",
+            )
 
 
 def check_rhythm(text: str, config: dict) -> Iterable[Finding]:
@@ -239,6 +310,7 @@ def check(
     register: str,
     claims: list[dict] | None = None,
     today: date | None = None,
+    verified: Iterable[int] | None = None,
 ) -> list[Finding]:
     if register not in config["registers"]:
         known = ", ".join(sorted(config["registers"]))
@@ -252,7 +324,7 @@ def check(
     findings += check_banned_phrases(text, config)
     findings += check_bold(text, config)
     findings += check_cost_assertions(text, config)
-    findings += check_claims(text, config, claims, today)
+    findings += check_claims(text, config, claims, today, verified)
     findings += check_rhythm(text, config)
     return findings
 
