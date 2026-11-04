@@ -106,7 +106,10 @@ def test_plugin_mode_logs_heartbeat_and_says_on(env):
     now = datetime(2026, 11, 3, 12, tzinfo=timezone.utc)
     out = json.loads(sc.plugin({"session_id": "s1", "source": "startup", "cwd": str(project)}, {}, now))
     assert out["systemMessage"].startswith("send gate: on")
-    line = json.loads((project / ".gates" / "log" / "sessions.jsonl").read_text().strip())
+    assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert out["hookSpecificOutput"]["additionalContext"].startswith("send gate: on")
+    assert "s1" in out["hookSpecificOutput"]["additionalContext"]
+    line =json.loads((project / ".gates" / "log" / "sessions.jsonl").read_text().strip())
     assert line == {"v": 1, "ts": "2026-11-03T12:00:00+00:00", "event": "gate_loaded",
                     "session_id": "s1", "source": "startup"}
 
@@ -134,3 +137,91 @@ def test_script_never_fails_a_session(tmp_path, stdin):
         assert proc.returncode == 0
         if proc.stdout:
             json.loads(proc.stdout)
+
+
+# draft-guard: no heartbeat for this session, no Gmail draft.
+
+DRAFT = "mcp__claude_ai_Gmail__create_draft"
+
+
+def heartbeat(project: Path, session_id: str) -> None:
+    sc.plugin({"session_id": session_id, "source": "startup", "cwd": str(project)}, {})
+
+
+def guard(project: Path, tool=DRAFT, session_id="s1") -> str:
+    return sc.draft_guard({"tool_name": tool, "session_id": session_id, "cwd": str(project)}, {})
+
+
+def is_deny(out: str) -> bool:
+    return bool(out) and json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("tool", [DRAFT, "mcp__claude_ai_Gmail__update_draft", "mcp__gmail__create_draft"])
+def test_guard_denies_drafts_without_heartbeat(env, tool):
+    _, project, _ = env
+    out = guard(project, tool)
+    assert is_deny(out)
+    assert "did not load in this session" in out
+
+
+def test_guard_allows_when_this_session_has_a_heartbeat(env):
+    _, project, _ = env
+    heartbeat(project, "s1")
+    assert guard(project, session_id="s1") == ""
+
+
+def test_guard_ignores_another_sessions_heartbeat(env):
+    _, project, _ = env
+    heartbeat(project, "old-session")
+    assert is_deny(guard(project, session_id="s1"))
+
+
+def test_guard_denies_without_session_id(env):
+    _, project, _ = env
+    heartbeat(project, "")
+    assert is_deny(guard(project, session_id=""))
+
+
+def test_guard_skips_bad_log_lines(env):
+    _, project, _ = env
+    log = project / ".gates" / "log" / "sessions.jsonl"
+    log.parent.mkdir(parents=True)
+    log.write_text("not json\n[]\n" + json.dumps({"event": "gate_loaded", "session_id": "s1"}) + "\n")
+    assert guard(project) == ""
+
+
+@pytest.mark.parametrize("tool", [
+    "mcp__claude_ai_Gmail__list_drafts", "mcp__claude_ai_Gmail__get_thread",
+    "mcp__claude_ai_Slack__create_draft", "Bash", "mcp__claude_ai_Gmail",
+])
+def test_guard_ignores_other_tools(env, tool):
+    _, project, _ = env
+    assert guard(project, tool) == ""
+
+
+def test_guard_ignores_projects_without_gates(tmp_path):
+    assert guard(tmp_path) == ""
+
+
+def test_guard_script_fails_closed_on_crash(env, monkeypatch):
+    _, project, _ = env
+    monkeypatch.setattr(sc, "draft_guard", lambda *a: 1 / 0)
+    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO(json.dumps({"tool_name": DRAFT})))
+    out = __import__("io").StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    assert sc.main(["x", "draft-guard"]) == 0
+    assert "guard crashed" in out.getvalue() and is_deny(out.getvalue())
+
+
+def test_guard_script_end_to_end(env):
+    _, project, _ = env
+    script = str(ROOT / "hooks" / "session_check.py")
+    payload = json.dumps({"tool_name": DRAFT, "session_id": "e2e", "cwd": str(project)})
+
+    def run(mode, data):
+        return subprocess.run([sys.executable, script, mode], input=data, capture_output=True,
+                              text=True, env={"PATH": "/usr/bin:/bin", "CLAUDE_PROJECT_DIR": str(project)})
+
+    assert is_deny(run("draft-guard", payload).stdout)
+    run("plugin", json.dumps({"session_id": "e2e", "source": "startup"}))
+    assert run("draft-guard", payload).stdout == ""

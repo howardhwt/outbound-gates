@@ -50,16 +50,26 @@ It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<d
    ```
 
    It lives outside the plugin on purpose: a plugin that isn't loaded can't report itself missing.
+5. Add the draft guard to the same user settings, so a gate that didn't load fails closed:
+
+   ```json
+   "PreToolUse": [ { "matcher": "mcp__.*__(create_draft|update_draft)", "hooks": [ { "type": "command",
+     "command": "python3 /path/to/outbound-gates/hooks/session_check.py draft-guard", "timeout": 10 } ] } ]
+   ```
+
+   In a project with a `.gates/` folder, it refuses Gmail `create_draft` and `update_draft` unless this session has a "send gate: on" heartbeat. It allows everything else, and when the heartbeat is there the plugin's own hook does the real check. If the guard itself crashes, it refuses. Live check, 2026-11-04: in a session that started before the plugin was installed, a probe `update_draft` was refused by the guard before Gmail saw it.
 
 ### Is the gate on?
 
 Look at the first lines of a new session:
 
-- **"send gate: on"**: the plugin loaded. It also adds a line to `.gates/log/sessions.jsonl` (time, session id, how the session started).
+- **"send gate: on"**: the plugin loaded. It also adds a line to `.gates/log/sessions.jsonl` (time, session id, how the session started). The terminal shows the line to you, and the same line goes into the agent's context, so you can ask the agent too.
 - **"WARNING send gate OFF in this project"**: the watchdog found a `.gates/` folder but the plugin isn't installed for this project, isn't enabled, or its installed copy has no hook. The message gives the reason and the fix. The agent is also told not to create drafts.
 - **Neither message**: the project has no `.gates/` folder, or the watchdog isn't in your user settings. Treat the gate as off.
 
-The watchdog reads the settings files and the plugin install record at session start. It can't see a hook that's set up correctly but fails to load for some other reason. That case still shows up as a missing "send gate: on".
+The watchdog reads the settings files and the plugin install record at session start. It can't see a hook that's set up correctly but fails to load for some other reason. That case still shows up as a missing "send gate: on", and the draft guard refuses drafts in that session.
+
+The guard has limits. If `python3` can't start, Claude Code treats the hook error as non-blocking and the call goes through. The heartbeat is a plain file in the project, so an agent that writes a fake line for its own session gets past the guard (see "Trust boundary").
 
 After changing the plugin's files, run `claude plugin marketplace update outbound-gates` and `claude plugin update outbound-gates@outbound-gates --scope local`, then start a new session. The installed gate is a copy, so edits to a clone don't reach it until then.
 
