@@ -1,0 +1,5 @@
+{
+  "_comment": "Gate settings for the demo. To run the demo in this repo, copy this file to .gates/config.json at the repo root. Paths are relative to the project folder.",
+  "crm_path": "demo/gate_crm.json",
+  "example_pages": "demo/pages"
+}

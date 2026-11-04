@@ -1,0 +1,11 @@
+{
+  "companies": [
+    {
+      "domain": "northwind-audio.example", "alt_domains": [],
+      "name": "Northwind Audio", "status": "NEW", "lane": "transcribe", "segment": "reseller",
+      "date_contacted": null, "date_replied": null,
+      "notes": [{"date": "2026-10-03", "text": "SOURCED: resells transcription by the minute. https://northwind-audio.example/pricing"}],
+      "tasks": [], "deals": []
+    }
+  ]
+}
