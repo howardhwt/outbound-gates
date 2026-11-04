@@ -42,6 +42,26 @@ It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<d
 1. Install the plugin **for your outbound project only**: `claude plugin install outbound-gates@outbound-gates --scope project` (or `--scope local` to keep it out of the shared project settings). Installed at the default user scope, the gate would also block Gmail sends and replies in every other project.
 2. In the project, create `.gates/config.json` and set `crm_path` to your CRM export (the shape is in `docs/crm-adapter.md`). The gate denies every draft until this is set; it never falls back to the demo CRM.
 3. Add `.gates/` to the project's `.gitignore`.
+4. Add the watchdog to your **user** settings (`~/.claude/settings.json`), with the path to your clone:
+
+   ```json
+   "hooks": { "SessionStart": [ { "hooks": [ { "type": "command",
+     "command": "python3 /path/to/outbound-gates/hooks/session_check.py watchdog", "timeout": 10 } ] } ] }
+   ```
+
+   It lives outside the plugin on purpose: a plugin that isn't loaded can't report itself missing.
+
+### Is the gate on?
+
+Look at the first lines of a new session:
+
+- **"send gate: on"**: the plugin loaded. It also adds a line to `.gates/log/sessions.jsonl` (time, session id, how the session started).
+- **"WARNING send gate OFF in this project"**: the watchdog found a `.gates/` folder but the plugin isn't installed for this project, isn't enabled, or its installed copy has no hook. The message gives the reason and the fix. The agent is also told not to create drafts.
+- **Neither message**: the project has no `.gates/` folder, or the watchdog isn't in your user settings. Treat the gate as off.
+
+The watchdog reads the settings files and the plugin install record at session start. It can't see a hook that's set up correctly but fails to load for some other reason. That case still shows up as a missing "send gate: on".
+
+After changing the plugin's files, run `claude plugin marketplace update outbound-gates` and `claude plugin update outbound-gates@outbound-gates --scope local`, then start a new session. The installed gate is a copy, so edits to a clone don't reach it until then.
 
 ### Settings
 
