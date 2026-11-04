@@ -170,7 +170,7 @@ Four skills load: `source`, `qualify`, `draft` and `presend-check`. The `draft` 
 
 The skills ship with `gates/config.example.json`. Copy it, change the rules to your own, and pass your copy with `--config`.
 
-The plugin also installs the send gate hook (`hooks/hooks.json`), which denies Gmail send, reply and forward calls. Install it for your outbound project only, with `--scope project` or `--scope local`. At the default user scope it would block those calls in every project. Setup is in `docs/send-gate.md`.
+The plugin also installs the send gate hook (`hooks/hooks.json`), which denies Gmail send, reply and forward calls. Install it for your outbound project only, with `--scope project` or `--scope local`. At the default user scope it would block those calls in every project. Setup is in `docs/send-gate.md`. Then type `/outbound-gates:setup` in that project to install the safety net that holds when the plugin isn't loaded: deny rules for send tools, a guard and a watchdog. A person runs it; macOS and Linux only.
 
 ## Adapting it
 

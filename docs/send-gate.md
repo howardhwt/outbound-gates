@@ -45,23 +45,26 @@ It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<d
    - **A file** (the default, used by the demo): set `crm_path` to your CRM export (the shape is in `docs/crm-adapter.md`).
 
    The gate denies every draft until one of these is set. It never falls back to the demo CRM, and in HubSpot mode it never falls back to a file.
-3. Add `.gates/` to the project's `.gitignore`.
-4. Add the watchdog to your **user** settings (`~/.claude/settings.json`), with the path to your clone:
+3. Add `.gates/` to the project's `.gitignore`. Setup warns if it isn't, but never edits the file.
+4. Install the safety net. In Claude Code, in the project, type `/outbound-gates:setup`. Only a person can start this skill (it has `disable-model-invocation`). It runs a preview that writes nothing, then prints one command for you to run with `!`. That command does the install and then the selftest. Start a new session afterwards. Setup:
+   - writes deny rules for the known send tools (claude.ai Gmail send, reply and forward; Slack send and schedule; the Apollo tools in `blocked_tools`) into **this project's** `.claude/settings.local.json`. Other projects are untouched.
+   - copies `session_check.py` (stamped with the plugin version), `gate-net.sh`, `blocked.json` and `setup.py` into `~/.config/outbound-gates/`, so they keep working when the plugin isn't loaded or has been removed.
+   - adds two hooks to your **user** settings, both through `gate-net.sh`:
+     - **watchdog** (SessionStart): warns when the gate isn't installed or enabled, or when the copy is older than the plugin.
+     - **guard** (PreToolUse): in a project with `.gates/`, refuses any send tool by name from any server, such as `send_email`, `sendEmail` or `slack_send_message`. It refuses Gmail drafts in a session with no "send gate: on" heartbeat.
+   - replaces hooks from the old manual setup (`session_check.py watchdog` or `draft-guard` pointing at a clone).
+   - warns when company policy or settings switch layers off: `allowManagedHooksOnly` or `allowManagedPermissionRulesOnly` in the local managed-settings file, or `disableAllHooks`. Policy delivered by MDM or a server isn't visible to this check.
 
-   ```json
-   "hooks": { "SessionStart": [ { "hooks": [ { "type": "command",
-     "command": "python3 /path/to/outbound-gates/hooks/session_check.py watchdog", "timeout": 10 } ] } ] }
+   Setup only changes entries it adds. Everything else in each settings file is re-read just before writing and kept, and each changed file gets a timestamped backup next to it. It refuses a settings file that isn't valid JSON, and writes through symlinks. What it added is recorded in `~/.config/outbound-gates/installed.json`.
+5. To check it later, run `python3 ~/.config/outbound-gates/session_check.py selftest <project>`. It only reads. It checks the copies, both hooks, the generated matcher, the project's deny rules, and sample calls through the guard. To remove the net, run the following from the copy, so it still works after the plugin is gone. Run the preview first, then add `--yes`, and run it before removing the plugin:
+
+   ```
+   python3 ~/.config/outbound-gates/setup.py --project <project> --uninstall [--all]
    ```
 
-   It lives outside the plugin on purpose: a plugin that isn't loaded can't report itself missing.
-5. Add the draft guard to the same user settings, so a gate that didn't load fails closed:
+   It removes only the deny rules setup added, the hooks once no project uses them (or with `--all`), and the copied files.
 
-   ```json
-   "PreToolUse": [ { "matcher": "mcp__.*__(create_draft|update_draft)", "hooks": [ { "type": "command",
-     "command": "python3 /path/to/outbound-gates/hooks/session_check.py draft-guard", "timeout": 10 } ] } ]
-   ```
-
-   In a project with a `.gates/` folder, it refuses Gmail `create_draft` and `update_draft` unless this session has a "send gate: on" heartbeat. It allows everything else, and when the heartbeat is there the plugin's own hook does the real check. If the guard itself crashes, it refuses. Live check, 2026-11-04: in a session that started before the plugin was installed, a probe `update_draft` was refused by the guard before Gmail saw it.
+Setup is a speed bump, not a lock: the agent never runs `--yes` or `--uninstall` itself, but an agent running as you could run the printed command or edit the files. The send service planned in `TODOS.md` is what removes that.
 
 ### Is the gate on?
 
@@ -69,11 +72,12 @@ Look at the first lines of a new session:
 
 - **"send gate: on"**: the plugin loaded. It also adds a line to `.gates/log/sessions.jsonl` (time, session id, how the session started). The terminal shows the line to you, and the same line goes into the agent's context, so you can ask the agent too.
 - **"WARNING send gate OFF in this project"**: the watchdog found a `.gates/` folder but the plugin isn't installed for this project, isn't enabled, or its installed copy has no hook. The message gives the reason and the fix. The agent is also told not to create drafts.
-- **Neither message**: the project has no `.gates/` folder, or the watchdog isn't in your user settings. Treat the gate as off.
+- **"older than the plugin"**: the copy in `~/.config/outbound-gates/` is out of date; run setup again.
+- **Neither message**: the project has no `.gates/` folder, or the safety net isn't installed. Treat the gate as off.
 
 The watchdog reads the settings files and the plugin install record at session start. It can't see a hook that's set up correctly but fails to load for some other reason. That case still shows up as a missing "send gate: on", and the draft guard refuses drafts in that session.
 
-The guard has limits. If `python3` can't start, Claude Code treats the hook error as non-blocking and the call goes through. The heartbeat is a plain file in the project, so an agent that writes a fake line for its own session gets past the guard (see "Trust boundary").
+The guard has limits. `gate-net.sh` turns a missing `python3`, a missing copy or a crash into a refusal in gated projects, but a hook that runs past its 10-second timeout may let the call through. The heartbeat is a plain file in the project, so an agent that writes a fake line for its own session gets past the guard (see "Trust boundary").
 
 After changing the plugin's files, run `claude plugin marketplace update outbound-gates` and `claude plugin update outbound-gates@outbound-gates --scope local`, then start a new session. The installed gate is a copy, so edits to a clone don't reach it until then.
 
