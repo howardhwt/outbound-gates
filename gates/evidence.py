@@ -389,8 +389,20 @@ def verify_claim(claim: dict, gates_home: Path) -> bool:
     return _quote_supports(text, str(claim.get("quote", "")), str(claim.get("value", ""))) is None
 
 
-def snapshot_hashes(claims: list[dict]) -> list[str]:
-    return sorted({str(c.get("evidence_sha256", "")) for c in claims})
+def snapshot_digests(claims: list[dict], gates_home: Path) -> list[str]:
+    """The actual sha256 of each stored page the claims point at ("missing" if absent).
+
+    Hashing the files themselves, not the names the claims record, means an
+    edited page changes the verdict fingerprint.
+    """
+    digests = set()
+    for claim in claims:
+        try:
+            data = _evidence_path(Path(gates_home), str(claim.get("evidence_sha256", ""))).read_bytes()
+            digests.add(hashlib.sha256(data).hexdigest())
+        except (EvidenceError, OSError):
+            digests.add("missing")
+    return sorted(digests)
 
 
 # --- command line -------------------------------------------------------------
