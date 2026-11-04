@@ -1,0 +1,26 @@
+{
+  "session_id": "SESSION",
+  "transcript_path": "TRANSCRIPT",
+  "cwd": "PROJECT_DIR",
+  "scratchpad_dir": "SCRATCHPAD",
+  "prompt_id": "PROMPT",
+  "permission_mode": "bypassPermissions",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "mcp__claude_ai_Gmail__create_draft",
+  "tool_input": {
+    "to": [
+      "dana@northwind-audio.example"
+    ],
+    "subject": "gate probe fixture",
+    "body": "Probe draft for outbound-gates T1. If you see this, the hook did not block it. Northwind lists $0.006 per audio minute.",
+    "htmlBody": "<p>Probe draft for outbound-gates T1 (HTML body).</p>"
+  },
+  "tool_use_id": "TOOL_USE",
+  "mcp_server": {
+    "name": "claude.ai Gmail",
+    "source": "claudeai"
+  }
+}
