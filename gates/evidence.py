@@ -1,0 +1,448 @@
+"""Verified evidence for the send gate.
+
+An agent may only put a number in a gated email after this module has fetched
+the source page itself, found the quoted sentence on it, and found the number
+inside that sentence. The page text is stored, and the claim points at it by
+hash, so the gate can re-check the claim later without the network.
+
+This module is the only code that knows how ``.gates/`` is laid out:
+
+    <gates_home>/evidence/<sha256 of page text>.txt
+    <gates_home>/drafts/<domain>/<contact>/claims/<sha256 of url|quote|value>.json
+
+It also loads the gate's settings, because the record command needs them.
+
+    PYTHONPATH=<plugin> python3 -m gates.evidence record \\
+        --gates-home <project>/.gates --contact dana@acme.example \\
+        --url https://acme.example/pricing --quote "..." --value '$0.006'
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import socket
+import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Iterable
+
+from .checker import (
+    UsageError,
+    extract_numbers,
+    html_to_text,
+    load_config,
+    normalise_number,
+    normalise_text,
+)
+from .presend import find_company, normalise_domain
+
+FORMAT_VERSION = 1
+MAX_BYTES = 2_000_000
+TIMEOUT_SECONDS = 10
+MAX_REDIRECTS = 5
+USER_AGENT = "outbound-gates-evidence/1 (+https://github.com/howardhwt/outbound-gates)"
+TEXT_TYPES = ("text/html", "text/plain", "application/xhtml+xml")
+USER_CONFIG = Path.home() / ".config" / "outbound-gates" / "config.json"
+_CONTACT_SAFE_RE = re.compile(r"[^a-z0-9._@+-]")
+
+
+def _load_json(path: Path, what: str):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise UsageError(f"{what} file not found: {path}") from None
+    except json.JSONDecodeError as err:
+        raise UsageError(f"{what} file is not valid JSON: {path} ({err})") from None
+
+
+class EvidenceError(ValueError):
+    """The source was refused. The message says why, in words an agent can act on."""
+
+
+# --- layout ---------------------------------------------------------------
+
+def contact_parts(contact: str) -> tuple[str, str]:
+    """(domain, contact) as folder names, or EvidenceError("invalid recipient path")."""
+    contact = (contact or "").strip().lower()
+    if contact.count("@") != 1:
+        raise EvidenceError(f"invalid recipient path: {contact!r} is not one email address")
+    local, _, host = contact.partition("@")
+    domain = normalise_domain(host)
+    safe_contact = _CONTACT_SAFE_RE.sub("_", contact)
+    for part in (local, domain, safe_contact):
+        if part in ("", ".", "..") or "/" in part or "\\" in part:
+            raise EvidenceError(f"invalid recipient path: {contact!r}")
+    if any(seg in ("", ".", "..") for seg in domain.split(".")):
+        raise EvidenceError(f"invalid recipient path: {contact!r}")
+    return domain, safe_contact
+
+
+def draft_dir(gates_home: Path, contact: str) -> Path:
+    domain, safe_contact = contact_parts(contact)
+    root = (Path(gates_home) / "drafts").resolve()
+    path = (root / domain / safe_contact).resolve()
+    if path == root or not path.is_relative_to(root):
+        raise EvidenceError(f"invalid recipient path: {contact!r}")
+    return path
+
+
+def _evidence_path(gates_home: Path, sha: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{64}", sha or ""):
+        raise EvidenceError(f"bad evidence hash: {sha!r}")
+    return Path(gates_home) / "evidence" / f"{sha}.txt"
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+# --- settings ---------------------------------------------------------------
+
+def load_settings(
+    plugin_root: Path, project_dir: Path, user_config: Path | None = None
+) -> dict:
+    """Plugin defaults, tightened (never loosened) by the project file.
+
+    A project may set register, sender_owner, max_unanswered, crm_path and
+    example_pages. It may only add to blocked_tools and banned_phrases.
+    source_allowlist comes only from the user's own config file, outside the
+    project the agent writes to.
+    """
+    plugin_root, project_dir = Path(plugin_root), Path(project_dir)
+    defaults = _load_json(plugin_root / "gates" / "hook.config.json", "gate settings")
+    rules = load_config(plugin_root / "gates" / defaults.get("rules", "config.example.json"))
+    project_file = project_dir / ".gates" / "config.json"
+    project = _load_json(project_file, "project gate settings") if project_file.exists() else {}
+    user_file = Path(user_config) if user_config else USER_CONFIG
+    user = _load_json(user_file, "user gate settings") if user_file.exists() else {}
+    for name, data in (("project", project), ("user", user)):
+        if not isinstance(data, dict):
+            raise UsageError(f"{name} gate settings must be a JSON object")
+
+    rules = dict(rules)
+    rules["banned_phrases"] = _union(rules.get("banned_phrases", []), project.get("banned_phrases", []))
+    settings = {
+        "rules": rules,
+        "register": project.get("register", defaults.get("register", "cold")),
+        "sender_owner": project.get("sender_owner", defaults.get("sender_owner")),
+        "max_unanswered": project.get("max_unanswered", defaults.get("max_unanswered")),
+        "blocked_tools": _union(defaults.get("blocked_tools", []), project.get("blocked_tools", [])),
+        "source_allowlist": [normalise_domain(h) for h in user.get("source_allowlist", [])],
+        "crm_path": None,
+        "example_pages": None,
+    }
+    for key in ("crm_path", "example_pages"):
+        value = project.get(key)
+        if value:
+            path = Path(value)
+            settings[key] = path if path.is_absolute() else (project_dir / path)
+    return settings
+
+
+def _union(base: Iterable[str], extra: Iterable[str]) -> list[str]:
+    out = list(base)
+    for item in extra:
+        if item not in out:
+            out.append(item)
+    return out
+
+
+def load_crm(settings: dict) -> dict:
+    path = settings.get("crm_path")
+    if not path:
+        raise UsageError("set crm_path in .gates/config.json")
+    crm = _load_json(path, "CRM")
+    if not isinstance(crm, dict):
+        raise UsageError(f"CRM file must hold a JSON object: {path}")
+    return crm
+
+
+# --- the source rule and the fetch -----------------------------------------
+
+def allowed_hosts(crm: dict, contact: str, settings: dict) -> list[str]:
+    """The company's own domains (main and alternates) plus the user allow-list."""
+    domain, _ = contact_parts(contact)
+    company = find_company(crm, domain)
+    if company is None:
+        raise EvidenceError(f"company not in CRM: {domain}")
+    hosts = [company["domain"], *company.get("alt_domains", [])]
+    return [normalise_domain(h) for h in hosts] + list(settings.get("source_allowlist", []))
+
+
+def host_allowed(host: str, hosts: Iterable[str]) -> bool:
+    host = normalise_domain(host)
+    return any(host == h or host.endswith("." + h) for h in hosts)
+
+
+Resolve = Callable[[str], list[str]]
+
+
+def _system_resolve(host: str) -> list[str]:
+    return [info[4][0] for info in socket.getaddrinfo(host, None)]
+
+
+def check_url(url: str, hosts: Iterable[str], resolve: Resolve = _system_resolve) -> str:
+    """Refuse anything but http(s) to an allowed, public host. Returns the host."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        raise EvidenceError(f"scheme not allowed: {parts.scheme or 'none'}")
+    host = (parts.hostname or "").lower()
+    if not host:
+        raise EvidenceError("URL has no host")
+    if not host_allowed(host, hosts):
+        raise EvidenceError(f"source host not allowed: {host}")
+    if host.endswith(".example"):
+        return host  # reserved name: served from fixture pages, never the network
+    try:
+        addresses = resolve(host)
+    except OSError as err:
+        raise EvidenceError(f"fetch failed: cannot resolve {host} ({err})") from None
+    for address in addresses:
+        ip = ipaddress.ip_address(address.split("%", 1)[0])
+        if getattr(ip, "ipv4_mapped", None):
+            ip = ip.ipv4_mapped
+        if not ip.is_global:
+            raise EvidenceError(f"private address not allowed: {host} -> {ip}")
+    return host
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+Fetch = Callable[[str, Callable[[str], None]], tuple[str, str, bytes]]
+
+
+def urllib_fetch(url: str, check: Callable[[str], None]) -> tuple[str, str, bytes]:
+    """GET with every redirect hop re-checked. Returns (final URL, content type, body)."""
+    opener = urllib.request.build_opener(_NoRedirect)
+    for _ in range(MAX_REDIRECTS + 1):
+        check(url)
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        try:
+            with opener.open(request, timeout=TIMEOUT_SECONDS) as resp:
+                body = resp.read(MAX_BYTES + 1)
+                return url, resp.headers.get("Content-Type", ""), body
+        except urllib.error.HTTPError as err:
+            if err.code in (301, 302, 303, 307, 308) and err.headers.get("Location"):
+                url = urllib.parse.urljoin(url, err.headers["Location"])
+                continue
+            raise EvidenceError(f"fetch failed: HTTP {err.code}") from None
+        except (urllib.error.URLError, TimeoutError, OSError) as err:
+            raise EvidenceError(f"fetch failed: {getattr(err, 'reason', err)}") from None
+    raise EvidenceError(f"fetch failed: more than {MAX_REDIRECTS} redirects")
+
+
+def _fixture_fetch(pages: Path | None, url: str) -> tuple[str, str, bytes]:
+    """Serve a committed page for a reserved .example host (the demo)."""
+    if not pages:
+        raise EvidenceError("fetch failed: .example pages are not configured")
+    parts = urllib.parse.urlsplit(url)
+    name = parts.path.strip("/") or "index"
+    root = (Path(pages) / parts.hostname).resolve()
+    path = (root / f"{name}.html").resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise EvidenceError(f"fetch failed: HTTP 404 for {url}")
+    return url, "text/html", path.read_bytes()
+
+
+def page_text(content_type: str, body: bytes) -> str:
+    if len(body) > MAX_BYTES:
+        raise EvidenceError(f"page too large: over {MAX_BYTES} bytes")
+    kind = content_type.split(";", 1)[0].strip().lower()
+    if kind not in TEXT_TYPES:
+        raise EvidenceError(f"unsupported content type: {kind or 'unknown'}")
+    charset = "utf-8"
+    for part in content_type.split(";")[1:]:
+        key, _, val = part.strip().partition("=")
+        if key.lower() == "charset" and val:
+            charset = val.strip("\"'")
+    try:
+        text = body.decode(charset, errors="replace")
+    except LookupError:
+        text = body.decode("utf-8", errors="replace")
+    if kind != "text/plain":
+        text = html_to_text(text)
+    return _flatten(text)
+
+
+def _flatten(text: str) -> str:
+    """Typography and whitespace normalised, so a copied quote still matches."""
+    return " ".join(normalise_text(text).replace(" ", " ").split())
+
+
+# --- record, read, verify -----------------------------------------------------
+
+def _claim_id(url: str, quote: str, value: str) -> str:
+    return hashlib.sha256(f"{url}\n{_flatten(quote)}\n{normalise_number(value)}".encode()).hexdigest()
+
+
+def _quote_supports(text: str, quote: str, value: str) -> str | None:
+    """None if the quote is on the page and holds the value, else the reason."""
+    quote_flat = _flatten(quote)
+    if not quote_flat:
+        return "quote is empty"
+    if quote_flat.lower() not in text.lower():
+        return "quote not found at URL"
+    if normalise_number(value) not in {v for _, v in extract_numbers(quote_flat)}:
+        return "value not in quote"
+    return None
+
+
+def record_claim(
+    gates_home: Path,
+    contact: str,
+    url: str,
+    quote: str,
+    value: str,
+    *,
+    settings: dict,
+    crm: dict,
+    fetch: Fetch = urllib_fetch,
+    resolve: Resolve = _system_resolve,
+    now: datetime | None = None,
+) -> Path:
+    """Fetch, verify and store one claim. Returns the claim file. Writes nothing on refusal."""
+    gates_home = Path(gates_home)
+    folder = draft_dir(gates_home, contact)
+    if not normalise_number(value or "") or not any(ch.isdigit() for ch in value):
+        raise EvidenceError(f"value is not a number: {value!r}")
+    hosts = allowed_hosts(crm, contact, settings)
+
+    def check(u: str) -> None:
+        check_url(u, hosts, resolve)
+
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if host.endswith(".example"):
+        check(url)
+        final_url, content_type, body = _fixture_fetch(settings.get("example_pages"), url)
+    else:
+        final_url, content_type, body = fetch(url, check)
+    check(final_url)
+    text = page_text(content_type, body)
+    reason = _quote_supports(text, quote, value)
+    if reason:
+        raise EvidenceError(reason)
+
+    sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    fetched_at = (now or datetime.now(timezone.utc)).replace(microsecond=0)
+    claim = {
+        "v": FORMAT_VERSION,
+        "claim": _flatten(quote)[:120],
+        "value": value,
+        "url": url,
+        "quote": _flatten(quote),
+        "evidence_sha256": sha,
+        "fetched_at": fetched_at.isoformat(),
+        "checked": fetched_at.date().isoformat(),
+    }
+    _atomic_write(_evidence_path(gates_home, sha), text.encode("utf-8"))
+    path = folder / "claims" / f"{_claim_id(url, quote, value)}.json"
+    _atomic_write(path, (json.dumps(claim, indent=2) + "\n").encode("utf-8"))
+    return path
+
+
+def claims_for(gates_home: Path, contact: str) -> list[dict]:
+    """Every stored claim for a recipient, in a stable order. Missing folder: none."""
+    folder = draft_dir(Path(gates_home), contact) / "claims"
+    if not folder.is_dir():
+        return []
+    claims = []
+    for path in sorted(folder.glob("*.json")):
+        try:
+            claim = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as err:
+            raise UsageError(f"claim file unreadable: {path} ({err})") from None
+        if not isinstance(claim, dict):
+            raise UsageError(f"claim file must hold a JSON object: {path}")
+        claims.append(claim)
+    return claims
+
+
+def verify_claim(claim: dict, gates_home: Path) -> bool:
+    """Offline re-check: stored page exists, matches its hash, holds the quote and value."""
+    try:
+        path = _evidence_path(Path(gates_home), claim.get("evidence_sha256", ""))
+        data = path.read_bytes()
+    except (EvidenceError, OSError):
+        return False
+    if hashlib.sha256(data).hexdigest() != claim.get("evidence_sha256"):
+        return False
+    text = data.decode("utf-8", errors="replace")
+    return _quote_supports(text, str(claim.get("quote", "")), str(claim.get("value", ""))) is None
+
+
+def snapshot_hashes(claims: list[dict]) -> list[str]:
+    return sorted({str(c.get("evidence_sha256", "")) for c in claims})
+
+
+# --- command line -------------------------------------------------------------
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+
+
+def record_command(gates_home: Path, contact: str) -> str:
+    """The record command as a shell line, for the gate's block message.
+
+    URL, QUOTE and VALUE are placeholders for the agent to fill in; paths and
+    the contact are already shell-quoted.
+    """
+    import shlex
+
+    return (
+        f"PYTHONPATH={shlex.quote(str(PLUGIN_ROOT))} python3 -m gates.evidence record"
+        f" --gates-home {shlex.quote(str(gates_home))} --contact {shlex.quote(contact)}"
+        " --url URL --quote 'QUOTE' --value VALUE"
+    )
+
+
+def main(argv: list[str] | None = None, fetch: Fetch = urllib_fetch) -> int:
+    parser = argparse.ArgumentParser(description="Record a verified source for a gated email.")
+    sub = parser.add_subparsers(dest="command", required=True)
+    rec = sub.add_parser("record", help="fetch a page, check the quote and value, store the claim")
+    rec.add_argument("--gates-home", required=True, help="the project's .gates folder")
+    rec.add_argument("--contact", required=True, help="the recipient's email address")
+    rec.add_argument("--url", required=True, help="a page on the company's own site")
+    rec.add_argument("--quote", required=True, help="the exact sentence on the page")
+    rec.add_argument("--value", required=True, help="the number, as written in the email")
+    args = parser.parse_args(argv)
+
+    gates_home = Path(args.gates_home).expanduser()
+    try:
+        if not gates_home.is_absolute():
+            raise UsageError("--gates-home must be an absolute path")
+        settings = load_settings(PLUGIN_ROOT, gates_home.parent)
+        crm = load_crm(settings)
+        path = record_claim(
+            gates_home, args.contact, args.url, args.quote, args.value,
+            settings=settings, crm=crm, fetch=fetch,
+        )
+    except EvidenceError as err:
+        print(f"refused: {err}", file=sys.stderr)
+        return 1
+    except UsageError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 2
+    print(f"recorded: {path}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())
