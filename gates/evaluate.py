@@ -14,10 +14,12 @@ import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Sequence
 
 from . import evidence
 from .checker import (
     FAIL,
+    WARN,
     Finding,
     check,
     check_banned_phrases,
@@ -110,7 +112,8 @@ def _fingerprint(
     return hashlib.sha256(blob).hexdigest()
 
 
-def evaluate(draft: Draft, crm: dict, settings: dict, *, gates_home: Path, today: date) -> Verdict:
+def evaluate(draft: Draft, crm: dict, settings: dict, *, gates_home: Path, today: date,
+             crm_warnings: Sequence[str] = ()) -> Verdict:
     rules, register = settings["rules"], settings["register"]
     claims = evidence.claims_for(gates_home, draft.recipient)
     verified = [i for i, claim in enumerate(claims) if evidence.verify_claim(claim, gates_home)]
@@ -130,7 +133,8 @@ def evaluate(draft: Draft, crm: dict, settings: dict, *, gates_home: Path, today
         crm, domain, draft.recipient.strip().lower(), today,
         settings.get("sender_owner"), settings.get("max_unanswered"),
     )
-    crm_path = settings.get("crm_path")
+    findings += [Finding("crm_coverage", WARN, w) for w in crm_warnings]
+    crm_path = "hubspot" if settings.get("crm_source") == "hubspot" else settings.get("crm_path")
     return Verdict(
         passed=passed(findings),
         findings=tuple(findings),

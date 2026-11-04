@@ -17,9 +17,16 @@ import json
 import os
 import re
 import sys
+import threading
 from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+# Claude Code lets a call through when a hook passes its timeout (60 s in
+# hooks/hooks.json). The CRM read has a 40 s budget; this watchdog refuses at
+# 45 s whatever is still running (DNS, a slow-drip response, a sleep).
+WATCHDOG_S = 45.0
+_out_lock = threading.Lock()
+_out_done = False
 GMAIL_ALWAYS_BLOCKED = {
     "send_message": "sends go out from Gmail by a person, not from the agent",
     "reply": "replies are outside the gate; answer the thread yourself in Gmail",
@@ -119,6 +126,10 @@ def _deny_reason(verdict, gates_home: Path, contact: str) -> str:
         )
         lines.append(record_command(gates_home, contact))
         lines.append(f"Claims folder read: {draft_dir(gates_home, contact) / 'claims'}")
+    warns = [f for f in verdict.findings if f.rule == "crm_coverage"]
+    if warns:
+        lines.append("CRM warnings:")
+        lines += [f"- {f.message}" for f in warns]
     return "\n".join(lines)
 
 
@@ -132,7 +143,31 @@ def _log(gates_home: Path, entry: dict) -> None:
         print(f"send gate: could not write the decision log: {err}", file=sys.stderr)
 
 
-def decide(raw: str, env: dict, today=None, now=None) -> str:
+def _emit(text: str) -> bool:
+    """Write the hook's answer once. The watchdog and main() race for it."""
+    global _out_done
+    with _out_lock:
+        if _out_done:
+            return False
+        _out_done = True
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        return True
+
+
+def _watchdog_fire(seconds: float) -> None:
+    if _emit(deny(f"gate deadline exceeded: no verdict within {seconds:g} s, so the draft is refused")):
+        os._exit(0)
+
+
+def start_watchdog(seconds: float = WATCHDOG_S) -> threading.Timer:
+    timer = threading.Timer(seconds, _watchdog_fire, args=(seconds,))
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def decide(raw: str, env: dict, today=None, now=None, *, deadline=None, transport=None) -> str:
     """The hook's whole decision: returns the stdout text ("" means allow)."""
     from datetime import date, datetime, timezone
 
@@ -165,7 +200,7 @@ def decide(raw: str, env: dict, today=None, now=None) -> str:
 
     from gates.checker import UsageError
     from gates.evaluate import evaluate
-    from gates.evidence import EvidenceError, contact_parts, load_crm, load_settings
+    from gates.evidence import EvidenceError, contact_parts, load_settings, read_crm
 
     try:
         draft = _draft_from_input(payload.get("tool_input") or {})
@@ -173,9 +208,10 @@ def decide(raw: str, env: dict, today=None, now=None) -> str:
         entry["recipient_domain"] = domain
         entry["contact_sha256"] = hashlib.sha256(draft.recipient.lower().encode()).hexdigest()
         settings = load_settings(plugin_root, project_dir)
-        crm = load_crm(settings)
-        entry["crm_path"] = str(settings["crm_path"])
-        verdict = evaluate(draft, crm, settings, gates_home=gates_home, today=today or date.today())
+        entry["crm_path"] = "hubspot" if settings["crm_source"] == "hubspot" else str(settings["crm_path"])
+        crm, warnings = read_crm(settings, draft.recipient, deadline=deadline, transport=transport)
+        verdict = evaluate(draft, crm, settings, gates_home=gates_home, today=today or date.today(),
+                           crm_warnings=warnings)
     except (ValueError, UsageError, EvidenceError, OSError) as err:
         entry["rules"] = ["input"]
         _log(gates_home, entry)
@@ -184,19 +220,24 @@ def decide(raw: str, env: dict, today=None, now=None) -> str:
     entry["decision"] = "allow" if verdict.passed else "deny"
     entry["rules"] = sorted({f.rule for f in verdict.findings if f.severity == "fail"})
     entry["inputs_sha256"] = verdict.inputs_sha256
+    entry["warnings"] = len(warnings)
     _log(gates_home, entry)
     if verdict.passed:
-        return ""
+        if not warnings:
+            return ""
+        # No permissionDecision: the call goes ahead as normal, and you see what wasn't checked.
+        return json.dumps({"systemMessage": "send gate: draft passed, with warnings: " + " | ".join(warnings)})
     return deny(_deny_reason(verdict, gates_home, draft.recipient))
 
 
 def main() -> int:
+    start_watchdog()
     raw = sys.stdin.read()
     try:
         out = decide(raw, dict(os.environ))
     except Exception as err:  # the gate fails closed on anything unexpected
         out = deny(f"gate internal error: {type(err).__name__}: {err}")
-    sys.stdout.write(out)
+    _emit(out)
     return 0
 
 
