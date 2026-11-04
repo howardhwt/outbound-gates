@@ -119,3 +119,12 @@ What this tells us:
 - One run, one model, a neutral prompt. A follow-up run should add pressure to keep the figures.
 
 The final draft passed with 84 words and no numbers except `$0.002`. Full output: session transcript, not committed.
+
+## Live check, 2026-11-03: the gate fails open when it isn't loaded
+
+The real gate was wired into a running session through `.claude/settings.local.json` after the T1 probe's `.claude/` folder had been deleted and recreated. The session did not pick up the new hook. A test `create_draft` was created (then deleted), and a test `send_message` to `dana@northwind-audio.example` was sent; `.example` is undeliverable, so it bounced. `.gates/log/gate.jsonl` had no entry, which shows the hook never ran.
+
+Lessons:
+- **Prove the hook is loaded before trusting it.** A missing log line after a gated call means the gate isn't running. Check the log after the first draft of a session.
+- **Never test a block with a send.** Test denials with `create_draft` only, which is reversible.
+- After installing or changing the plugin mid-session, run `/hooks` or restart Claude Code before relying on the gate.
