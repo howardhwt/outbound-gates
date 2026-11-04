@@ -171,8 +171,13 @@ def plugin(payload: dict, env: dict, now: datetime | None = None) -> str:
                 handle.write(json.dumps(entry, sort_keys=True) + "\n")
     except OSError as err:
         print(f"send gate: could not write the session log: {err}", file=sys.stderr)
+    message = "send gate: on. Gmail drafts are checked; send, reply and forward are blocked."
     return json.dumps({
-        "systemMessage": "send gate: on. Gmail drafts are checked; send, reply and forward are blocked.",
+        "systemMessage": message,  # shown to the user in the terminal
+        "hookSpecificOutput": {  # added to the agent's context, so it can confirm the gate too
+            "hookEventName": "SessionStart",
+            "additionalContext": f"{message} Heartbeat logged for session {payload.get('session_id')}.",
+        },
     })
 
 

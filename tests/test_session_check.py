@@ -106,7 +106,10 @@ def test_plugin_mode_logs_heartbeat_and_says_on(env):
     now = datetime(2026, 11, 3, 12, tzinfo=timezone.utc)
     out = json.loads(sc.plugin({"session_id": "s1", "source": "startup", "cwd": str(project)}, {}, now))
     assert out["systemMessage"].startswith("send gate: on")
-    line = json.loads((project / ".gates" / "log" / "sessions.jsonl").read_text().strip())
+    assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert out["hookSpecificOutput"]["additionalContext"].startswith("send gate: on")
+    assert "s1" in out["hookSpecificOutput"]["additionalContext"]
+    line =json.loads((project / ".gates" / "log" / "sessions.jsonl").read_text().strip())
     assert line == {"v": 1, "ts": "2026-11-03T12:00:00+00:00", "event": "gate_loaded",
                     "session_id": "s1", "source": "startup"}
 

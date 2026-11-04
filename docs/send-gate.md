@@ -63,7 +63,7 @@ It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<d
 
 Look at the first lines of a new session:
 
-- **"send gate: on"**: the plugin loaded. It also adds a line to `.gates/log/sessions.jsonl` (time, session id, how the session started).
+- **"send gate: on"**: the plugin loaded. It also adds a line to `.gates/log/sessions.jsonl` (time, session id, how the session started). The terminal shows the line to you, and the same line goes into the agent's context, so you can ask the agent too.
 - **"WARNING send gate OFF in this project"**: the watchdog found a `.gates/` folder but the plugin isn't installed for this project, isn't enabled, or its installed copy has no hook. The message gives the reason and the fix. The agent is also told not to create drafts.
 - **Neither message**: the project has no `.gates/` folder, or the watchdog isn't in your user settings. Treat the gate as off.
 
