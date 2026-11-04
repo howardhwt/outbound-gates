@@ -19,7 +19,6 @@ docs/crm-adapter.md. Anything not mapped is reported, with the check it weakens.
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import os
 import re
@@ -30,7 +29,7 @@ import urllib.request
 from datetime import date, datetime, timezone
 from typing import Callable, Optional, Tuple
 
-from .checker import UsageError, _load_json, passed
+from .checker import UsageError, _load_json, html_to_text, passed
 from .presend import BLIND_SPOTS, normalise_domain, presend_check, _parse
 
 BASE_URL = "https://api.hubapi.com"
@@ -69,21 +68,36 @@ DEFAULTS = {
 Transport = Callable[[str, str, dict, Optional[bytes]], Tuple[int, dict, bytes]]
 
 
-def urllib_transport(method: str, url: str, headers: dict, body: bytes | None) -> tuple[int, dict, bytes]:
+def urllib_transport(method: str, url: str, headers: dict, body: bytes | None,
+                     *, timeout: float = 30) -> tuple[int, dict, bytes]:
+    """Bind a shorter timeout with functools.partial. It covers each socket
+    operation, not DNS or the whole request, so callers that need a hard cap
+    must also run a watchdog (see hooks/gate_gmail.py)."""
     request = urllib.request.Request(url, data=body, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.status, dict(response.headers), response.read()
     except urllib.error.HTTPError as err:
         return err.code, dict(err.headers or {}), err.read() or b""
 
 
+class BudgetExceeded(UsageError):
+    """The read ran out of its time budget."""
+
+
 class HubSpot:
-    """A small read-only client. Retries rate limits and server errors with backoff."""
+    """A small read-only client. Retries rate limits and server errors with backoff.
+
+    For the send gate: retries=1, max_backoff=1, honour_retry_after=False and a
+    deadline (a time.monotonic() value), so a slow or rate-limited HubSpot ends
+    the read with BudgetExceeded instead of running past the hook's timeout.
+    """
 
     def __init__(self, token: str, transport: Transport = urllib_transport,
                  base_url: str = BASE_URL, sleep: Callable[[float], None] = time.sleep,
-                 retries: int = 4):
+                 retries: int = 4, *, max_backoff: float | None = None,
+                 honour_retry_after: bool = True, deadline: float | None = None,
+                 clock: Callable[[], float] = time.monotonic):
         if not token:
             raise UsageError(f"no HubSpot credential: set {TOKEN_ENV[0]}")
         self._token = token
@@ -91,6 +105,15 @@ class HubSpot:
         self._base = base_url.rstrip("/")
         self._sleep = sleep
         self._retries = retries
+        self._max_backoff = max_backoff
+        self._honour_retry_after = honour_retry_after
+        self._deadline = deadline
+        self._clock = clock
+        self.requests = 0
+
+    def _check_budget(self, extra: float = 0.0) -> None:
+        if self._deadline is not None and self._clock() + extra >= self._deadline:
+            raise BudgetExceeded(f"CRM read ran out of time after {self.requests} HubSpot request(s)")
 
     def _call(self, method: str, path: str, body: dict | None = None) -> dict:
         headers = {"Authorization": f"Bearer {self._token}", "Accept": "application/json"}
@@ -99,9 +122,14 @@ class HubSpot:
             headers["Content-Type"] = "application/json"
             data = json.dumps(body).encode("utf-8")
         for attempt in range(self._retries + 1):
+            self._check_budget()
+            self.requests += 1
             status, resp_headers, raw = self._transport(method, self._base + path, headers, data)
             if status in RETRY_STATUSES and attempt < self._retries:
-                wait = _retry_after(resp_headers) or 2 ** attempt
+                wait = (self._honour_retry_after and _retry_after(resp_headers)) or 2 ** attempt
+                if self._max_backoff is not None:
+                    wait = min(wait, self._max_backoff)
+                self._check_budget(wait)
                 self._sleep(wait)
                 continue
             break
@@ -166,12 +194,6 @@ def _day(value) -> str | None:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
     except ValueError:
         return text[:10] if re.match(r"\d{4}-\d{2}-\d{2}", text) else None
-
-
-def _plain(markup: str | None) -> str:
-    text = re.sub(r"<br\s*/?>|</p>|</div>", "\n", markup or "", flags=re.I)
-    text = re.sub(r"<[^>]+>", "", text)
-    return html.unescape(text).strip()
 
 
 def _addresses(value: str | None) -> list[str]:
@@ -270,7 +292,7 @@ def build_company(client: HubSpot, domain: str, mapping: dict) -> tuple[dict | N
         cid = str(match["id"])
 
         for note in client.batch_read("notes", client.associated_ids(cid, "notes"), ["hs_note_body", "hs_timestamp"]):
-            text = _plain(note.get("properties", {}).get("hs_note_body"))
+            text = html_to_text(note.get("properties", {}).get("hs_note_body") or "")
             entry = {"date": _day(note["properties"].get("hs_timestamp")), "text": text}
             if text.upper().startswith("SENT"):
                 found = _addresses(text)

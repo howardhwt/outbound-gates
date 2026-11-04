@@ -40,7 +40,11 @@ It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<d
 ## Setting it up
 
 1. Install the plugin **for your outbound project only**: `claude plugin install outbound-gates@outbound-gates --scope project` (or `--scope local` to keep it out of the shared project settings). Installed at the default user scope, the gate would also block Gmail sends and replies in every other project.
-2. In the project, create `.gates/config.json` and set `crm_path` to your CRM export (the shape is in `docs/crm-adapter.md`). The gate denies every draft until this is set; it never falls back to the demo CRM.
+2. In the project, create `.gates/config.json` and choose where the gate reads the CRM from:
+   - **Live HubSpot** (for real outbound): set `"crm_source": "hubspot"` and `"sender_owner"` to your HubSpot owner id. Then put a read-only HubSpot Service Key (Settings > Integrations > Service Keys, with read access to companies, contacts, deals, notes, tasks and emails) in `~/.config/outbound-gates/hubspot.key` and run `chmod 600` on it. See "Live HubSpot" below.
+   - **A file** (the default, used by the demo): set `crm_path` to your CRM export (the shape is in `docs/crm-adapter.md`).
+
+   The gate denies every draft until one of these is set. It never falls back to the demo CRM, and in HubSpot mode it never falls back to a file.
 3. Add `.gates/` to the project's `.gitignore`.
 4. Add the watchdog to your **user** settings (`~/.claude/settings.json`), with the path to your clone:
 
@@ -77,10 +81,21 @@ After changing the plugin's files, run `claude plugin marketplace update outboun
 
 | Setting | Where | Notes |
 |---|---|---|
-| `crm_path`, `register`, `sender_owner`, `max_unanswered`, `example_pages` | `<project>/.gates/config.json` | Relative paths are read from the project folder. |
+| `crm_source` (`file` or `hubspot`), `crm_path`, `hubspot` (field mapping), `register`, `sender_owner`, `max_unanswered`, `example_pages` | `<project>/.gates/config.json` | Relative paths are read from the project folder. The `hubspot` mapping uses the keys in `docs/crm-adapter.md`; the touch limit is `max_unanswered` only. |
+| HubSpot key | `~/.config/outbound-gates/hubspot.key` only | Kept out of the project folder. Never printed or logged. |
 | `blocked_tools`, `banned_phrases` | `<project>/.gates/config.json` | Can only **add** to the plugin's lists, never remove. |
 | `source_allowlist` | `~/.config/outbound-gates/config.json` only | Kept out of the project folder the agent writes to. |
 | evidence required | always on | No setting turns it off. |
+
+## Live HubSpot
+
+With `"crm_source": "hubspot"`, every gated draft reads the recipient's company (notes, tasks, deals, logged emails) and the contact from HubSpot at that moment, so the check sees a reply, a disqualification or an owner change made since the draft was written. It only searches and reads.
+
+- **Refuses on any doubt:** no key, a HubSpot error, an unreachable HubSpot, or running out of time all refuse the draft with the reason. A company HubSpot doesn't know fails the pre-send check.
+- **Time limits:** Claude Code lets a call through if a hook passes its 60 s timeout, so the gate has to finish first. Each request gets 8 s, with at most one retry after 1 s, and HubSpot's Retry-After is ignored. The whole read gets 40 s. A watchdog refuses the draft at 45 s whatever is still running.
+- **Warnings:** what the read couldn't check (the contact isn't in HubSpot, no `sender_owner`, gaps in the field mapping) goes into the verdict as `crm_coverage` warnings. A passing draft with warnings shows them in your terminal. A refused one lists them under "CRM warnings". The log records how many there were.
+- **Cost:** about 10 requests for one company, more for duplicate companies or long histories.
+- Recording a source (`python -m gates.evidence record`) reads HubSpot the same way, to find the company's own domains.
 
 ## Running the demo
 

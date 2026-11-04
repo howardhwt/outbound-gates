@@ -51,6 +51,10 @@ MAX_REDIRECTS = 5
 USER_AGENT = "outbound-gates-evidence/1 (+https://github.com/howardhwt/outbound-gates)"
 TEXT_TYPES = ("text/html", "text/plain", "application/xhtml+xml")
 USER_CONFIG = Path.home() / ".config" / "outbound-gates" / "config.json"
+HUBSPOT_KEY_FILE = USER_CONFIG.parent / "hubspot.key"
+CRM_SOURCES = ("file", "hubspot")
+CRM_BUDGET_S = 40.0  # the hook's own limit; its watchdog fires at 45 s and Claude Code's timeout is 60 s
+HUBSPOT_REQUEST_TIMEOUT_S = 8.0
 _CONTACT_SAFE_RE = re.compile(r"[^a-z0-9._@+-]")
 
 
@@ -119,8 +123,9 @@ def load_settings(
 ) -> dict:
     """Plugin defaults, tightened (never loosened) by the project file.
 
-    A project may set register, sender_owner, max_unanswered, crm_path and
-    example_pages. It may only add to blocked_tools and banned_phrases.
+    A project may set register, sender_owner, max_unanswered, crm_source,
+    crm_path, hubspot (the field mapping) and example_pages. It may only add to
+    blocked_tools and banned_phrases.
     source_allowlist comes only from the user's own config file, outside the
     project the agent writes to.
     """
@@ -144,9 +149,17 @@ def load_settings(
         "max_unanswered": project.get("max_unanswered", defaults.get("max_unanswered")),
         "blocked_tools": _union(defaults.get("blocked_tools", []), project.get("blocked_tools", [])),
         "source_allowlist": [normalise_domain(h) for h in user.get("source_allowlist", [])],
+        "crm_source": project.get("crm_source", "file"),
         "crm_path": None,
+        "hubspot": project.get("hubspot", {}),
         "example_pages": None,
     }
+    if settings["crm_source"] not in CRM_SOURCES:
+        raise UsageError(f"crm_source must be one of {', '.join(CRM_SOURCES)}, got {settings['crm_source']!r}")
+    if not isinstance(settings["hubspot"], dict):
+        raise UsageError("hubspot in .gates/config.json must be a JSON object")
+    if "max_unanswered_touches" in settings["hubspot"]:
+        raise UsageError("set the touch limit as max_unanswered in .gates/config.json, not hubspot.max_unanswered_touches")
     for key in ("crm_path", "example_pages"):
         value = project.get(key)
         if value:
@@ -161,6 +174,60 @@ def _union(base: Iterable[str], extra: Iterable[str]) -> list[str]:
         if item not in out:
             out.append(item)
     return out
+
+
+def read_crm(settings: dict, contact: str, *, deadline: float | None = None,
+             transport=None, key_file: Path | None = None) -> tuple[dict, list[str]]:
+    """The CRM for one draft, and warnings about what it couldn't check.
+
+    File mode loads crm_path. HubSpot mode reads the contact's company and the
+    contact live, with short timeouts, one retry, Retry-After ignored and a
+    deadline, and never falls back to a file. Any failure raises, so the
+    caller refuses the draft.
+    """
+    if settings.get("crm_source", "file") == "file":
+        return load_crm(settings), []
+
+    import functools
+    import time
+
+    from . import hubspot
+
+    key_path = Path(key_file) if key_file else HUBSPOT_KEY_FILE
+    try:
+        token = key_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        token = ""
+    if not token:
+        raise UsageError(f"no HubSpot key: put a read-only Service Key in {key_path} (chmod 600)")
+    client = hubspot.HubSpot(
+        token,
+        transport=transport or functools.partial(hubspot.urllib_transport, timeout=HUBSPOT_REQUEST_TIMEOUT_S),
+        retries=1, max_backoff=1.0, honour_retry_after=False,
+        deadline=deadline if deadline is not None else time.monotonic() + CRM_BUDGET_S,
+    )
+    mapping = dict(hubspot.DEFAULTS)
+    mapping.update(settings.get("hubspot") or {})
+    mapping["max_unanswered_touches"] = settings.get("max_unanswered")
+    domain, _ = contact_parts(contact)
+    try:
+        company, extra = hubspot.build_company(client, domain, mapping)
+        person = hubspot.read_contact(client, contact, mapping) if company else None
+    except OSError as err:  # DNS failure, refused connection, socket timeout
+        raise UsageError(f"HubSpot unreachable after {client.requests} request(s): {err}") from None
+
+    warnings = list(extra)
+    if company and person:
+        company["contacts"].append(person)
+    elif company:
+        warnings.append(f"{contact} is not a HubSpot contact: unsubscribe, bounce and sequence checks did not run")
+    if not settings.get("sender_owner"):
+        warnings.append("no sender_owner in .gates/config.json: the owner check is off")
+    gaps = hubspot.coverage_warnings(mapping)
+    if gaps:
+        warnings.append("HubSpot mapping gaps: " + "; ".join(gaps))
+    warnings.append(f"read live from HubSpot in {client.requests} request(s)")
+    return {"companies": [company] if company else []}, warnings
 
 
 def load_crm(settings: dict) -> dict:
@@ -441,7 +508,7 @@ def main(argv: list[str] | None = None, fetch: Fetch = urllib_fetch) -> int:
         if not gates_home.is_absolute():
             raise UsageError("--gates-home must be an absolute path")
         settings = load_settings(PLUGIN_ROOT, gates_home.parent)
-        crm = load_crm(settings)
+        crm, _ = read_crm(settings, args.contact)
         path = record_claim(
             gates_home, args.contact, args.url, args.quote, args.value,
             settings=settings, crm=crm, fetch=fetch,
