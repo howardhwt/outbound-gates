@@ -83,7 +83,7 @@ def classify(payload: dict, plugin_root: Path, project_dir: Path) -> tuple[str, 
     if is_gmail and short == "create_draft":
         return "gate", short
     if short in blocked_tools(plugin_root, project_dir):
-        return "deny", f"{short} is blocked: sends go through a gated Gmail draft"
+        return "deny", f"{short} is blocked in this project: agents don't send here; a person does, and email goes through a gated Gmail draft"
     return "pass", short
 
 

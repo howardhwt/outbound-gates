@@ -59,7 +59,7 @@ The terminal output then shows the funnel before and after. The contacted count 
 
 In the demo, research and drafting are read from fixture files so it needs no API key and gives the same result every time. In real use an agent does those two steps by following the skills. The gates are the same code either way.
 
-Nothing in this repo sends email. A person sends every one. With the send gate installed, an agent in Claude Code can't either: Gmail send, reply and forward are blocked, and so are the Apollo send and sequence tools.
+Nothing in this repo sends email. A person sends every one. With the send gate installed, an agent in Claude Code can't either, in that project: Gmail send, reply and forward are blocked, and so are the Apollo send and sequence tools and Slack send and schedule. Other channels are covered only if you add their tools to `blocked_tools`.
 
 ## How the pieces fit
 

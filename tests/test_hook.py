@@ -86,7 +86,7 @@ def test_hooks_json_routes_every_mcp_tool():
              ("create_draft", "update_draft", "send_message", "reply", "forward")]
     names += [f"mcp__claude_ai_Apollo_io__{t}" for t in
               json.loads((ROOT / "gates" / "hook.config.json").read_text())["blocked_tools"]]
-    names += ["mcp__someone_smartlead__smartlead_send"]
+    names += ["mcp__someone_smartlead__smartlead_send", "mcp__claude_ai_Slack__slack_send_message"]
     assert all(re.fullmatch(matcher, n) for n in names)
 
 
@@ -105,7 +105,23 @@ def test_gmail_from_another_server_is_recognised(project):
 @pytest.mark.parametrize("tool", json.loads((ROOT / "gates" / "hook.config.json").read_text())["blocked_tools"])
 def test_default_blocked_tools_are_denied_by_name_suffix(project, tool):
     out = run(project, payload(tool=f"mcp__claude_ai_Apollo_io__{tool}", server="claude.ai Apollo.io"))
-    assert "sends go through a gated Gmail draft" in reason(out)
+    assert "email goes through a gated Gmail draft" in reason(out)
+
+
+@pytest.mark.parametrize("tool", ["mcp__claude_ai_Slack__slack_send_message",
+                                  "mcp__claude_ai_Slack__slack_schedule_message",
+                                  "mcp__slack_local__slack_send_message"])
+def test_slack_sends_are_denied(project, tool):
+    out = run(project, payload(tool=tool, server="claude.ai Slack", text="hi", channel_id="C1"))
+    assert "is blocked in this project" in reason(out)
+    assert log_lines(project)[-1]["rules"] == ["blocked_tool"]
+
+
+@pytest.mark.parametrize("tool", ["mcp__claude_ai_Slack__slack_send_message_draft",
+                                  "mcp__claude_ai_Slack__slack_read_channel",
+                                  "mcp__claude_ai_Apollo_io__apollo_contacts_search"])
+def test_reads_and_slack_drafts_pass(project, tool):
+    assert run(project, payload(tool=tool, server="x", q="y")) == ""
 
 
 def test_project_can_add_a_blocked_tool_but_not_remove_one(project):

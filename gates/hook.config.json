@@ -1,5 +1,5 @@
 {
-  "_comment": "Defaults for the Claude Code send gate. A project overrides register, sender_owner, max_unanswered, crm_path and example_pages in <project>/.gates/config.json. It can only add to blocked_tools and banned_phrases. source_allowlist is read only from ~/.config/outbound-gates/config.json. See docs/send-gate.md.",
+  "_comment": "Defaults for the Claude Code send gate. A project overrides register, sender_owner, max_unanswered, crm_path and example_pages in <project>/.gates/config.json. It can only add to blocked_tools and banned_phrases. source_allowlist is read only from ~/.config/outbound-gates/config.json. blocked_tools holds the send tools of other channels (Apollo, Slack), matched by the part of the name after the last '__'. See docs/send-gate.md.",
   "rules": "config.example.json",
   "register": "cold",
   "sender_owner": null,
@@ -11,6 +11,11 @@
     "apollo_emailer_messages_create",
     "apollo_emailer_campaigns_update_step_content",
     "apollo_sequences_create",
-    "apollo_sequences_update"
+    "apollo_sequences_update",
+    "apollo_emailer_campaigns_step_content",
+    "apollo_agent_workflow_automation",
+    "apollo_agent_optimize_sequences",
+    "slack_send_message",
+    "slack_schedule_message"
   ]
 }
