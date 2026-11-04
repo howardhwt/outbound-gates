@@ -1,6 +1,70 @@
-# Send gate: notes for wave 1
+# The send gate
 
-Working notes for the Claude Code send gate described in `docs/designs/mcp-send-gate.md`. This file holds facts checked against the real host. The user-facing guide is added to it in task T8.
+The send gate is a Claude Code hook that stops an agent from creating a Gmail draft unless the draft passes the gates. Every number in it must have a source the gate fetched and checked itself, and the CRM must say this person can be emailed.
+
+**Wave 1 is a demo and reference implementation.** It gates first-touch cold drafts in Claude Code, reads the CRM from a file export, and leaves replies, follow-ups and sending to you in Gmail. The design and every decision behind it are in `docs/designs/mcp-send-gate.md`. Wave 2 (live HubSpot, an MCP server, packaging) is listed in `TODOS.md`.
+
+## What it does
+
+| Tool call | What happens |
+|---|---|
+| Gmail `create_draft` | Allowed only if the draft passes. Otherwise denied, with the reasons. |
+| Gmail `send_message`, `reply`, `forward`, `update_draft` | Always denied. A person sends from Gmail; edits are made by creating a new draft, so the whole email is checked again. |
+| Apollo send and sequence tools | Always denied, so an agent can't route around the Gmail gate. The exact tool names are in `gates/hook.config.json` (`blocked_tools`). The list is not exhaustive: other senders, and general runners such as Make's `scenarios_run`, are not covered unless you add them. |
+| Any other MCP tool | Not touched. The hook exits without loading the gate. |
+
+A draft passes when:
+
+- it has exactly one recipient (to, cc and bcc together), and only fields the gate checks: `to`, `cc`, `bcc`, `subject`, `body`, `htmlBody`, `includeSignature`. Attachments and replies (`replyToMessageId`) are refused, and so is any field the gate doesn't know.
+- the body and the HTML body (as text) each pass every rule in `gates/config.example.json`, and the subject passes the rules that make sense for a subject line.
+- every number has a **verified source**, apart from your own facts (`own_facts`). Computed numbers, such as a margin worked out from a price, are not allowed in gated drafts unless that figure itself is sourced.
+- the pre-send check passes against your CRM file: the company is known, not disqualified, not already contacted, and so on.
+
+## Recording a source
+
+When a draft is denied for an unsourced number, the denial prints a command like this, with the paths filled in:
+
+```
+PYTHONPATH=<plugin> python3 -m gates.evidence record --gates-home <project>/.gates \
+  --contact dana@northwind-audio.example --url URL --quote 'QUOTE' --value VALUE
+```
+
+The command fetches `URL` itself and records the claim only if:
+
+- the URL is http(s), on a public address, and on the company's own site: its domain or an alternate domain from the CRM, or a subdomain of one. A host you trust can be added to `source_allowlist` in `~/.config/outbound-gates/config.json`.
+- `QUOTE` appears on the page as a reader sees it. Text inside the page's scripts and styles does not count.
+- `VALUE` is one of the numbers in the quote ("$1,200" and "1,200" are the same number; "4" is not in "40%").
+
+It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<domain>/<contact>/claims/`, then exits 0. A refusal says why and exits 1; bad input exits 2.
+
+## Setting it up
+
+1. Install the plugin **for your outbound project only**: `claude plugin install outbound-gates@outbound-gates --scope project` (or `--scope local` to keep it out of the shared project settings). Installed at the default user scope, the gate would also block Gmail sends and replies in every other project.
+2. In the project, create `.gates/config.json` and set `crm_path` to your CRM export (the shape is in `docs/crm-adapter.md`). The gate denies every draft until this is set; it never falls back to the demo CRM.
+3. Add `.gates/` to the project's `.gitignore`.
+
+### Settings
+
+| Setting | Where | Notes |
+|---|---|---|
+| `crm_path`, `register`, `sender_owner`, `max_unanswered`, `example_pages` | `<project>/.gates/config.json` | Relative paths are read from the project folder. |
+| `blocked_tools`, `banned_phrases` | `<project>/.gates/config.json` | Can only **add** to the plugin's lists, never remove. |
+| `source_allowlist` | `~/.config/outbound-gates/config.json` only | Kept out of the project folder the agent writes to. |
+| evidence required | always on | No setting turns it off. |
+
+## Running the demo
+
+In this repo, copy `demo/gate/config.json` to `.gates/config.json`. Then ask Claude Code to draft `demo/gate/northwind-draft.txt` to `dana@northwind-audio.example`. The first attempt is denied for `$0.006`. Recording the price from `https://northwind-audio.example/pricing` (served from `demo/pages/`, because `.example` is a reserved name and never fetched) lets the same draft through. `tests/test_gate_flow.py` runs the same chain offline.
+
+## When a draft is blocked unexpectedly
+
+1. Read the denial: it lists every failing rule and, for numbers, the claims folder the gate read.
+2. Check `.gates/log/gate.jsonl`. It has one line per gated or blocked call: time, tool, decision, failing rules, recipient domain, a hash of the contact, the CRM path and the verdict fingerprint. It never holds the email text.
+3. "gate crashed: exit N" means the gate itself failed to run (for example, python3 missing). Every crash blocks.
+
+## Trust boundary
+
+The gate stops an agent that cuts corners: inventing a number, citing a page that doesn't say it, citing its own page, hand-writing a claim, or switching tools. It does not stop a determined agent running as you on your own machine, which could forge a stored page and a matching claim, or edit the plugin's files and your user settings. Keep that in mind when you read "the agent can't get around the gate".
 
 ## T1: live probe (2026-11-03, Claude Code 2.1.318)
 
@@ -36,7 +100,7 @@ From the connector's tool schema:
 | `htmlBody` | string, HTML; the rich version recipients see when present | gated after `html_to_text` (full check) |
 | `attachments` | list (base64 content) | denied: "attachments are not gated" |
 | `replyToMessageId` | string; makes the draft a reply and appends the original message | denied: replies are outside wave 1 |
-| `includeSignature` | boolean | to decide in T5. The signature is written by the user, not the agent, but its text isn't visible to the gate. |
+| `includeSignature` | boolean | allowed: the signature is your own text, not the agent's, though the gate can't see it |
 | anything else | n/a | denied: "unexpected field <name>" |
 
 `htmlBody` existing confirms the outside reviewer's concern: a clean `body` could sit next to an `htmlBody` with an invented number. Both are checked.
