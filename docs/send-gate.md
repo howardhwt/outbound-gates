@@ -10,7 +10,7 @@ The send gate is a Claude Code hook that stops an agent from creating a Gmail dr
 |---|---|
 | Gmail `create_draft` | Allowed only if the draft passes. Otherwise denied, with the reasons. |
 | Gmail `send_message`, `reply`, `forward`, `update_draft` | Always denied. A person sends from Gmail; edits are made by creating a new draft, so the whole email is checked again. |
-| Apollo send and sequence tools | Always denied, so an agent can't route around the Gmail gate. The exact tool names are in `gates/hook.config.json` (`blocked_tools`). The list is not exhaustive: other senders, and general runners such as Make's `scenarios_run`, are not covered unless you add them. |
+| Apollo send and sequence tools, Slack `slack_send_message` and `slack_schedule_message` | Always denied, so an agent can't route around the Gmail gate. Slack drafts (`slack_send_message_draft`) and reads are not touched. The exact tool names are in `gates/hook.config.json` (`blocked_tools`), matched by the part after the last `__`, so the same tool from another server is caught too. The list is not exhaustive: other senders, and general runners such as Make's `scenarios_run`, are not covered unless you add them. |
 | Any other MCP tool | Not touched. The hook exits without loading the gate. |
 
 A draft passes when:
