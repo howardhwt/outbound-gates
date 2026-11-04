@@ -330,3 +330,37 @@ def test_wrapper_passes_the_guard_answer_through(tmp_path):
                           input=json.dumps({"tool_name": "mcp__x__send_email"}), capture_output=True, text=True,
                           env={"PATH": os.environ["PATH"], "CLAUDE_PROJECT_DIR": str(tmp_path)})
     assert "is a send tool" in proc.stdout
+
+
+# --- red-team quick wins ---
+
+def set_up_project(tmp_path, monkeypatch, project):
+    netdir = tmp_path / "net"
+    netdir.mkdir(exist_ok=True)
+    (netdir / "installed.json").write_text(json.dumps({"schema": 1, "projects": {str(project.resolve()): {}}}))
+    monkeypatch.setattr(sc, "NET_DIR", netdir)
+
+
+def test_guard_stays_on_when_gates_folder_is_deleted(tmp_path, monkeypatch):
+    project = tmp_path / "proj"
+    project.mkdir()  # set up by setup, but no .gates/
+    set_up_project(tmp_path, monkeypatch, project)
+    assert is_deny(sc.draft_guard({"tool_name": "mcp__x__send_email", "cwd": str(project)}, {}))
+    assert is_deny(sc.draft_guard({"tool_name": "mcp__claude_ai_Gmail__create_draft", "session_id": "s",
+                                   "cwd": str(project)}, {}))
+
+
+def test_watchdog_warns_when_gates_folder_is_deleted(tmp_path, monkeypatch):
+    project = tmp_path / "proj"
+    project.mkdir()
+    set_up_project(tmp_path, monkeypatch, project)
+    out = json.loads(sc.watchdog({"cwd": str(project)}, {}, tmp_path / "home"))
+    assert ".gates/ folder is missing" in out["systemMessage"]
+
+
+def test_projects_never_set_up_stay_untouched(tmp_path, monkeypatch):
+    set_up_project(tmp_path, monkeypatch, tmp_path / "elsewhere")
+    other = tmp_path / "other"
+    other.mkdir()
+    assert sc.watchdog({"cwd": str(other)}, {}, tmp_path / "home") == ""
+    assert sc.draft_guard({"tool_name": "mcp__x__send_email", "cwd": str(other)}, {}) == ""

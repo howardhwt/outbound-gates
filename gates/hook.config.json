@@ -16,7 +16,10 @@
     "apollo_agent_workflow_automation",
     "apollo_agent_optimize_sequences",
     "slack_send_message",
-    "slack_schedule_message"
+    "slack_schedule_message",
+    "apollo_website_visitor_domain_tracker_send_install_email",
+    "scenarios_run",
+    "rpc_execute"
   ],
   "send_words": [
     "send_message",
@@ -25,7 +28,10 @@
     "reply",
     "forward",
     "schedule_message",
-    "send_now"
+    "send_now",
+    "post_message",
+    "send_sms",
+    "send_invite"
   ],
   "deny_rules": {
     "claude_ai_Gmail": [
@@ -36,6 +42,10 @@
     "claude_ai_Slack": [
       "slack_send_message",
       "slack_schedule_message"
+    ],
+    "claude_ai_Make": [
+      "scenarios_run",
+      "rpc_execute"
     ]
   }
 }

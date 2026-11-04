@@ -266,3 +266,24 @@ def test_setup_skill_is_person_only():
     text = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
     assert "disable-model-invocation: true" in text
     assert "--yes" in text and "Do not run it yourself" in text
+
+
+@pytest.mark.parametrize("tool", ["mcp__chat__chat_postMessage", "mcp__sms__send_sms", "mcp__cal__send_invite",
+                                  "mcp__claude_ai_Apollo_io__apollo_website_visitor_domain_tracker_send_install_email",
+                                  "mcp__claude_ai_Make__scenarios_run", "mcp__claude_ai_Make__rpc_execute"])
+def test_red_team_names_are_routed_and_guarded(tool, tmp_path, monkeypatch):
+    from hooks import session_check as sc
+    names = setup.load_names(ROOT)
+    assert re.search(names["matcher"], tool)
+    netdir = tmp_path / "net"
+    netdir.mkdir()
+    (netdir / "blocked.json").write_text(json.dumps(names))
+    monkeypatch.setattr(sc, "NET_DIR", netdir)
+    project = tmp_path / "proj"
+    (project / ".gates").mkdir(parents=True)
+    assert sc.draft_guard({"tool_name": tool, "cwd": str(project)}, {})
+
+
+def test_make_runners_are_project_deny_rules():
+    deny = setup.load_names(ROOT)["deny_rules"]
+    assert "mcp__claude_ai_Make__scenarios_run" in deny and "mcp__claude_ai_Make__rpc_execute" in deny

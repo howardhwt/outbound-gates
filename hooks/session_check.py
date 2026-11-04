@@ -102,9 +102,32 @@ def install_state(project: Path, home: Path) -> tuple[bool, str]:
     return False, "installed, but the installed copy has no PreToolUse hook (reinstall the plugin)"
 
 
+def set_up_by_setup(project: Path) -> bool:
+    """True when setup recorded this project in installed.json next to this copy."""
+    projects = _read_json(NET_DIR / "installed.json").get("projects") or {}
+    try:
+        return str(project.resolve()) in projects
+    except (OSError, RuntimeError):
+        return False
+
+
+def gated(project: Path) -> bool:
+    """A project the gate covers: it has .gates/, or setup installed the net here."""
+    return (project / ".gates").is_dir() or set_up_by_setup(project)
+
+
 def watchdog(payload: dict, env: dict, home: Path) -> str:
     project = Path(env.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd())
     if not (project / ".gates").is_dir():
+        if set_up_by_setup(project):
+            return json.dumps({
+                "systemMessage": (f"WARNING send gate: setup installed the safety net in {project}, but its "
+                                  ".gates/ folder is missing, so the plugin gate has no settings here. The guard "
+                                  "still refuses send tools. Restore .gates/ or run the uninstall."),
+                "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
+                    "The outbound-gates .gates/ folder is missing in a project set up for the send gate. "
+                    "Do not create drafts or call any send tool; tell the user.")},
+            })
         return ""
     problems = []
     for ok, reason in (install_state(project, home), enabled_state(project, home)):
@@ -229,7 +252,7 @@ def draft_guard(payload: dict, env: dict) -> str:
     if len(parts) < 3:
         return ""
     project = Path(env.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd())
-    if not (project / ".gates").is_dir():
+    if not gated(project):
         return ""
     if name_matches(parts[-1], guard_names(project)):
         return _deny(f"{parts[-1]} is a send tool, and send tools are blocked in this project. "
