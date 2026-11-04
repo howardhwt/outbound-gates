@@ -1,0 +1,16 @@
+{
+  "_comment": "Defaults for the Claude Code send gate. A project overrides register, sender_owner, max_unanswered, crm_path and example_pages in <project>/.gates/config.json. It can only add to blocked_tools and banned_phrases. source_allowlist is read only from ~/.config/outbound-gates/config.json. See docs/send-gate.md.",
+  "rules": "config.example.json",
+  "register": "cold",
+  "sender_owner": null,
+  "max_unanswered": null,
+  "blocked_tools": [
+    "apollo_emailer_messages_send_now",
+    "apollo_emailer_campaigns_add_contact_ids",
+    "apollo_emailer_campaigns_approve",
+    "apollo_emailer_messages_create",
+    "apollo_emailer_campaigns_update_step_content",
+    "apollo_sequences_create",
+    "apollo_sequences_update"
+  ]
+}

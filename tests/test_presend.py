@@ -84,3 +84,33 @@ def test_cli_exit_codes(tmp_path, capsys):
     assert "BLOCKED" in capsys.readouterr().out
     path.write_text(json.dumps(company()))
     assert main(args) == 0
+
+
+# Owner claim and contact-level blocks (optional fields; absent means no check)
+
+def test_account_owned_by_someone_else_is_blocked():
+    crm = company(owner="rep-2")
+    found = presend_check(crm, "acme.example", "a@acme.example", today=TODAY, sender_owner="rep-1")
+    assert "owned_by_other" in {f.rule for f in found if f.severity == FAIL}
+
+
+def test_own_or_unowned_account_passes_owner_check():
+    for crm in (company(owner="rep-1"), company(owner=""), company()):
+        assert passed(presend_check(crm, "acme.example", "a@acme.example", today=TODAY, sender_owner="rep-1"))
+
+
+def test_owner_check_is_off_without_sender_owner():
+    assert passed(presend_check(company(owner="rep-2"), "acme.example", "a@acme.example", today=TODAY))
+
+
+def test_contact_blocks():
+    person = {"email": "A@acme.example", "blocked": "Asked to stop", "in_sequence": True, "unanswered_touches": 4}
+    found = presend_check(company(contacts=[person]), "acme.example", "a@acme.example", today=TODAY, max_unanswered=4)
+    assert {"contact_blocked", "in_sequence", "touch_limit"} <= {f.rule for f in found if f.severity == FAIL}
+
+
+def test_touch_limit_needs_a_threshold_and_other_contacts_do_not_block():
+    person = {"email": "b@acme.example", "blocked": "Bounced", "unanswered_touches": 9}
+    assert passed(presend_check(company(contacts=[person]), "acme.example", "a@acme.example", today=TODAY, max_unanswered=4))
+    mine = {"email": "a@acme.example", "unanswered_touches": 9}
+    assert passed(presend_check(company(contacts=[mine]), "acme.example", "a@acme.example", today=TODAY))

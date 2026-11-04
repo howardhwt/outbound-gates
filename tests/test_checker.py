@@ -91,3 +91,61 @@ def test_cli_exit_codes(capsys):
     base = ["--config", str(ROOT / "gates" / "config.example.json"), "--register", "cold"]
     assert main([str(ROOT / "examples" / "draft_fail.txt"), *base]) == 1
     assert "BLOCKED" in capsys.readouterr().out
+
+
+# --- send gate helpers and evidence mode (eng D4, D6, D14; CEO D15) ---
+
+from gates.checker import extract_numbers, html_to_text, normalise_number
+
+
+def test_draft_and_quote_numbers_normalise_the_same_way():
+    assert normalise_number("$1,200") == normalise_number("1,200") == "1200"
+    assert [v for _, v in extract_numbers("costs $1,200 a year")] == ["1200"]
+    assert [v for _, v in extract_numbers("1,200 per year")] == ["1200"]
+
+
+def test_extract_numbers_keeps_percent_and_never_matches_substrings():
+    values = [v for _, v in extract_numbers("40% of 1,400 minutes")]
+    assert values == ["40%", "1400"]
+    assert "4" not in values and "40" not in values
+
+
+def test_extract_numbers_skips_urls_times_and_dates():
+    assert extract_numbers("see https://acme.example/plan-2 at 3pm on Jan 5") == []
+
+
+def test_html_to_text_drops_hidden_page_code():
+    page = (
+        "<p>Transcription: <b>$0.006</b>&nbsp;per minute</p>"
+        "<script>var promo = '40% off';</script><style>.x{}</style>"
+        "<!-- 99% hidden -->"
+    )
+    text = html_to_text(page)
+    assert "$0.006 per minute" in text
+    assert "40%" not in text and "99%" not in text
+
+
+def test_evidence_mode_counts_only_verified_claims():
+    claims = [dict(CLAIMS[0])]
+    unverified = check(GOOD, CONFIG, "cold", claims, today=TODAY, verified=[])
+    assert "claims_unverified" in rules(unverified)
+    assert passed(check(GOOD.replace("0.4 cents", "a fraction of a cent")
+                        .replace("roughly 67% gross margin", "a healthy margin"),
+                        CONFIG, "cold", claims, today=TODAY, verified=[0]))
+
+
+def test_evidence_mode_ignores_derived_values():
+    # examples/claims.json derives 0.4 and 67% from the $0.006 claim
+    findings = check(GOOD, CONFIG, "cold", CLAIMS, today=TODAY, verified=[0])
+    blocked = {f.message for f in findings if f.rule == "claims" and f.severity == FAIL}
+    assert any("'0.4'" in m for m in blocked) and any("'67%'" in m for m in blocked)
+
+
+def test_unverified_claim_not_used_in_draft_only_warns():
+    other = {"claim": "Docs say 90 minutes", "value": "90", "url": "https://x.example/d",
+             "checked": "2026-10-01"}
+    text = GOOD.replace("0.4 cents", "a fraction of a cent").replace(
+        "roughly 67% gross margin", "a healthy margin")
+    findings = check(text, CONFIG, "cold", [CLAIMS[0], other], today=TODAY, verified=[0])
+    assert passed(findings), [str(f) for f in findings]
+    assert "claims_unverified" in rules(findings, WARN)

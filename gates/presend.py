@@ -1,12 +1,14 @@
 """Pre-send check: block a draft on what the CRM already knows.
 
 The gate checker reads the draft. This module reads the account. It answers
-four questions before a draft is handed to a person to send:
+these questions before a draft is handed to a person to send:
 
 1. Is the account already dead?
 2. Has this person been contacted?
 3. Was a promise made, or has someone replied?
 4. Who else at the company has been contacted?
+5. Is the account claimed by someone else? (when the sender's owner id is given)
+6. Is this person blocked, in a sequence, or out of touches? (when the CRM records it)
 
 The check works on a plain dictionary, described in docs/crm-adapter.md.
 Anything that can produce that shape from a real CRM can use this module.
@@ -155,8 +157,34 @@ def check_colleagues(company: dict, contact: str, today: date) -> list[Finding]:
     return found
 
 
+def check_owner(company: dict, sender_owner: str | None) -> list[Finding]:
+    owner = str(company.get("owner") or "").strip()
+    if not sender_owner or not owner or owner == str(sender_owner).strip():
+        return []
+    return [Finding("owned_by_other", FAIL,
+                    f"the company is owned by {owner}; flag it to that owner instead of emailing")]
+
+
+def check_contact(company: dict, contact: str, max_unanswered: int | None) -> list[Finding]:
+    found = []
+    contact = contact.strip().lower()
+    for person in company.get("contacts", []):
+        if str(person.get("email", "")).strip().lower() != contact:
+            continue
+        if person.get("blocked"):
+            found.append(Finding("contact_blocked", FAIL, f"{contact} has an outreach block: {person['blocked']}"))
+        if person.get("in_sequence"):
+            found.append(Finding("in_sequence", FAIL, f"{contact} is already enrolled in a sequence"))
+        touches = person.get("unanswered_touches")
+        if max_unanswered is not None and isinstance(touches, int) and touches >= max_unanswered:
+            found.append(Finding("touch_limit", FAIL,
+                                 f"{contact} has {touches} unanswered touches (limit {max_unanswered})"))
+    return found
+
+
 def presend_check(
-    crm: dict, domain: str, contact: str, today: date | None = None
+    crm: dict, domain: str, contact: str, today: date | None = None,
+    sender_owner: str | None = None, max_unanswered: int | None = None,
 ) -> list[Finding]:
     """Run all four questions. A company that is not in the CRM is a failure:
     the source step creates the record, so a missing record means a step was skipped."""
@@ -169,6 +197,8 @@ def presend_check(
     findings += check_contacted(company, contact)
     findings += check_history(company)
     findings += check_colleagues(company, contact, today)
+    findings += check_owner(company, sender_owner)
+    findings += check_contact(company, contact, max_unanswered)
     return findings
 
 
@@ -184,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--domain", required=True, help="the company domain")
     parser.add_argument("--contact", required=True, help="the address the draft is for")
     parser.add_argument("--today", help="YYYY-MM-DD (default: the real date)")
+    parser.add_argument("--owner", help="the sender's owner id; blocks accounts owned by someone else")
+    parser.add_argument("--max-unanswered", type=int, help="block a contact with this many unanswered touches")
     args = parser.parse_args(argv)
 
     try:
@@ -191,7 +223,8 @@ def main(argv: list[str] | None = None) -> int:
             today = _parse(args.today) if args.today else None
         except ValueError:
             raise UsageError(f"--today must be YYYY-MM-DD, got {args.today!r}") from None
-        findings = presend_check(load_crm(args.crm), args.domain, args.contact, today)
+        findings = presend_check(load_crm(args.crm), args.domain, args.contact, today,
+                                 sender_owner=args.owner, max_unanswered=args.max_unanswered)
     except UsageError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2

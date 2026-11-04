@@ -54,11 +54,12 @@ The terminal output then shows the funnel before and after. The contacted count 
 | `gates/funnel.py` | Runs. Recounts the funnel from a CRM export |
 | `demo/` | Runs. The pipeline end to end on a mock CRM, offline, with an HTML report of the run |
 | `skills/` | Procedures. Four instruction files an AI agent follows for sourcing, qualifying, drafting and checking |
-| A CRM or mail connector | Not included. See `docs/crm-adapter.md` for the data shape to supply |
+| `gates/hubspot.py` | Runs. Reads one HubSpot account, read only, into the shape the pre-send check uses. Other CRMs: see `docs/crm-adapter.md` |
+| `hooks/` + `gates/evidence.py` + `gates/evaluate.py` | Runs. The send gate: a Claude Code hook that denies a Gmail draft unless every number has a source the gate fetched and checked itself, and the pre-send check passes. Wave 1 is a demo and reference implementation. See `docs/send-gate.md` |
 
 In the demo, research and drafting are read from fixture files so it needs no API key and gives the same result every time. In real use an agent does those two steps by following the skills. The gates are the same code either way.
 
-Nothing in this repo sends email. A person sends every one.
+Nothing in this repo sends email. A person sends every one. With the send gate installed, an agent in Claude Code can't either: Gmail send, reply and forward are blocked, and so are the Apollo send and sequence tools.
 
 ## How the pieces fit
 
@@ -67,6 +68,10 @@ source  ->  qualify  ->  draft  ->  gate checker  ->  pre-send check  ->  human 
  (wide)    (verdict     (claim       (blocks on         (blocks on
             card with    file per     mechanical         CRM history)
             URLs)        draft)       rules)
+                                  |
+                       in Claude Code, the send gate hook runs both gates
+                       on every Gmail create_draft, after checking each
+                       number's source itself (docs/send-gate.md)
 ```
 
 Each step writes to the CRM before the next one starts. `examples/walkthrough/` shows what every step leaves behind for one account.
@@ -165,6 +170,8 @@ Four skills load: `source`, `qualify`, `draft` and `presend-check`. The `draft` 
 
 The skills ship with `gates/config.example.json`. Copy it, change the rules to your own, and pass your copy with `--config`.
 
+The plugin also installs the send gate hook (`hooks/hooks.json`), which denies Gmail send, reply and forward calls. Install it for your outbound project only, with `--scope project` or `--scope local`. At the default user scope it would block those calls in every project. Setup is in `docs/send-gate.md`.
+
 ## Adapting it
 
 1. Copy `gates/config.example.json` and set your registers, banned phrases and bold allow list.
@@ -187,6 +194,7 @@ The tests cover both gates, the demo's outcome for every account, the walkthroug
 - A number written in a different unit from its claim, such as 0.6 cents for $0.006, is not matched. List it under the claim's `derived` field.
 - The pre-send check sees promises and replies only when they are recorded in the CRM. Reading earlier emails for tone and repeated openings still needs a person or an agent.
 - The funnel groups by segment. Add your own grouping if you run more than one lane.
+- The send gate is wave 1: Claude Code only, a CRM file export (no live HubSpot yet), first-touch drafts only, and computed numbers are blocked unless the figure itself is sourced. It stops an agent that cuts corners, not a determined agent running as you on your own machine. See `docs/send-gate.md`.
 
 ## License
 
