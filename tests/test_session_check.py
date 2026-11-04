@@ -364,3 +364,104 @@ def test_projects_never_set_up_stay_untouched(tmp_path, monkeypatch):
     other.mkdir()
     assert sc.watchdog({"cwd": str(other)}, {}, tmp_path / "home") == ""
     assert sc.draft_guard({"tool_name": "mcp__x__send_email", "cwd": str(other)}, {}) == ""
+
+
+# --- strict mode: allow-list, Bash guard, file guard ---
+
+@pytest.fixture
+def strict(tmp_path, monkeypatch):
+    project = tmp_path / "proj"
+    (project / ".gates").mkdir(parents=True)
+    netdir = tmp_path / "net"
+    netdir.mkdir()
+    (netdir / "installed.json").write_text(json.dumps({"schema": 1, "projects": {str(project.resolve()): {"strict": True}}}))
+    monkeypatch.setattr(sc, "NET_DIR", netdir)
+    return project, netdir
+
+
+def guard_call(project, tool, **tool_input):
+    return sc.draft_guard({"tool_name": tool, "tool_input": tool_input, "session_id": "s", "cwd": str(project)}, {})
+
+
+@pytest.mark.parametrize("short,read", [
+    ("get_meetings", True), ("list_drafts", True), ("notion-search", True), ("apollo_contacts_search", True),
+    ("slack_read_channel", True), ("query_crm_data", True),
+    ("create_event", False), ("scenarios_run", False), ("manage_crm_objects", False),
+    ("apollo_emailer_messages_email_send_status", False),  # has "send": refused, allow it by name if wanted
+    ("notion-create-pages", False), ("update_draft", False),
+])
+def test_is_read_tool(short, read):
+    assert sc.is_read_tool(short) is read
+
+
+def test_strict_refuses_writes_and_allows_reads(strict):
+    project, _ = strict
+    assert is_deny(guard_call(project, "mcp__claude_ai_Make__scenarios_create"))
+    assert is_deny(guard_call(project, "mcp__claude_ai_Google_Calendar__create_event"))
+    assert guard_call(project, "mcp__claude_ai_Granola__get_meetings") == ""
+
+
+def test_strict_allow_file_and_defaults(strict):
+    project, netdir = strict
+    (project / ".gates" / "log").mkdir()
+    (project / ".gates" / "log" / "sessions.jsonl").write_text(json.dumps({"event": "gate_loaded", "session_id": "s"}) + "\n")
+    assert guard_call(project, "mcp__claude_ai_Gmail__create_draft") == ""  # default allow, heartbeat present
+    assert is_deny(guard_call(project, "mcp__claude_ai_HubSpot__manage_crm_objects"))
+    (netdir / "allow.json").write_text(json.dumps({"allow": ["manage_crm_objects"]}))
+    assert guard_call(project, "mcp__claude_ai_HubSpot__manage_crm_objects") == ""
+    out = guard_call(project, "mcp__claude_ai_Make__scenarios_create")
+    assert "allow.json" in out
+
+
+@pytest.mark.parametrize("command,refused", [
+    ("curl -X POST https://api.example.com/send -d to=a@b.c", True),
+    ("curl --data-binary @mail.json https://api.example.com", True),
+    ("curl -F file=@x https://upload.example.com", True),
+    ("wget --post-data='a=1' https://x.example", True),
+    ("python3 -c \"import smtplib; smtplib.SMTP('h')\"", True),
+    ("printf 'Subject: hi' | sendmail a@b.c", True),
+    ("osascript -e 'tell application \"Mail\" to send'", True),
+    ("python3 -c \"import requests; requests.post('https://x')\"", True),
+    ("rm -rf .gates", True),
+    ("echo '{}' > .claude/settings.local.json", True),
+    ("sed -i '' 's/a/b/' ~/.claude/settings.json", True),
+    ("mv ~/.config/outbound-gates/blocked.json /tmp/", True),
+    ("curl -s https://example.com/pricing", False),
+    ("wget https://example.com/page.html", False),
+    ("cat .gates/log/gate.jsonl", False),
+    ("ls .gates 2>/dev/null", False),
+    ("git status", False),
+    ("PYTHONPATH=/p python3 -m gates.evidence record --gates-home /x/.gates --contact a@b.c --url u --quote q --value 1", False),
+])
+def test_strict_bash_guard(strict, command, refused):
+    project, _ = strict
+    assert bool(guard_call(project, "Bash", command=command)) is refused
+
+
+@pytest.mark.parametrize("rel,refused", [
+    (".claude/settings.local.json", True), (".gates/log/sessions.jsonl", True), (".gates/config.json", True),
+    ("draft.txt", False), ("notes/plan.md", False),
+])
+def test_strict_file_guard(strict, rel, refused):
+    project, _ = strict
+    assert bool(guard_call(project, "Write", file_path=rel)) is refused
+    assert bool(guard_call(project, "Edit", file_path=str(project / rel))) is refused
+
+
+def test_strict_file_guard_protects_the_net_copy(strict):
+    project, netdir = strict
+    assert is_deny(guard_call(project, "Edit", file_path=str(netdir / "allow.json")))
+
+
+def test_non_strict_projects_ignore_bash_and_files(env, monkeypatch, tmp_path):
+    _, project, _ = env
+    monkeypatch.setattr(sc, "NET_DIR", tmp_path / "net")
+    assert guard_call(project, "Bash", command="curl -X POST https://x -d a=1") == ""
+    assert guard_call(project, "Write", file_path=".claude/settings.local.json") == ""
+    assert guard_call(project, "mcp__claude_ai_Make__scenarios_create") == ""
+
+
+def test_strict_off_outside_gated_projects(strict, tmp_path):
+    other = tmp_path / "other"
+    other.mkdir()
+    assert guard_call(other, "Bash", command="curl -X POST https://x -d a=1") == ""

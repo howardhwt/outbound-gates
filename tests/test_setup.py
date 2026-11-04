@@ -287,3 +287,46 @@ def test_red_team_names_are_routed_and_guarded(tool, tmp_path, monkeypatch):
 def test_make_runners_are_project_deny_rules():
     deny = setup.load_names(ROOT)["deny_rules"]
     assert "mcp__claude_ai_Make__scenarios_run" in deny and "mcp__claude_ai_Make__rpc_execute" in deny
+
+
+# --- strict mode ---
+
+def manifest_entry(home, project):
+    return json.loads((net(home) / "installed.json").read_text())["projects"][str(project.resolve())]
+
+
+def test_strict_install(env, capsys):
+    home, project, _ = env
+    assert run(env, "--strict", "--yes") == 0
+    assert "PASSED" in capsys.readouterr().out
+    assert manifest_entry(home, project)["strict"] is True
+    matchers = sorted(g["matcher"] for g in user_settings(home)["hooks"]["PreToolUse"])
+    assert matchers == sorted([setup.STRICT_MCP_MATCHER, setup.STRICT_FILE_MATCHER])
+    assert json.loads((net(home) / "allow.json").read_text())["allow"] == []
+
+
+def test_strict_is_sticky_and_can_be_turned_off(env):
+    home, project, _ = env
+    run(env, "--strict", "--yes")
+    run(env, "--yes")
+    assert manifest_entry(home, project)["strict"] is True
+    run(env, "--no-strict", "--yes")
+    assert manifest_entry(home, project)["strict"] is False
+    assert [g["matcher"] for g in user_settings(home)["hooks"]["PreToolUse"]] == [setup.load_names(ROOT)["matcher"]]
+
+
+def test_allow_file_is_never_overwritten(env):
+    home, project, _ = env
+    run(env, "--strict", "--yes")
+    (net(home) / "allow.json").write_text(json.dumps({"allow": ["manage_crm_objects"]}))
+    run(env, "--strict", "--yes")
+    assert json.loads((net(home) / "allow.json").read_text())["allow"] == ["manage_crm_objects"]
+
+
+def test_strict_and_no_strict_together_is_bad_input(env):
+    assert run(env, "--strict", "--no-strict") == 2
+
+
+def test_strict_matchers_match_session_check():
+    from hooks import session_check as sc
+    assert sorted(sc.STRICT_MATCHERS) == sorted([setup.STRICT_MCP_MATCHER, setup.STRICT_FILE_MATCHER])

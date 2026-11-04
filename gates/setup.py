@@ -40,6 +40,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = 1
+STRICT_MCP_MATCHER = "^mcp__.*"
+STRICT_FILE_MATCHER = "^(Bash|Edit|Write|MultiEdit|NotebookEdit)$"
 NET_FILES = ("session_check.py", "gate-net.sh", "blocked.json", "setup.py")
 LEGACY_MARKERS = ("session_check.py watchdog", "session_check.py draft-guard")
 DRAFT_NAMES = ["create_draft", "update_draft"]
@@ -172,15 +174,21 @@ def _drop_hooks(settings: dict, keep) -> dict:
     return settings
 
 
-def install_user_hooks(settings: dict, net_dir: Path, matcher: str) -> dict:
+def guard_matchers(matcher: str, strict: bool) -> list[str]:
+    """PreToolUse matchers for the guard: send names only, or (strict) every MCP tool plus Bash and file edits."""
+    return [STRICT_MCP_MATCHER, STRICT_FILE_MATCHER] if strict else [matcher]
+
+
+def install_user_hooks(settings: dict, net_dir: Path, matchers: list[str]) -> dict:
     """Replace our hooks and any manual (legacy) session_check hooks with the current ones."""
     settings = _drop_hooks(settings, lambda c: not _is_ours(c, net_dir) and not _is_legacy(c, net_dir))
     commands = _hook_commands(net_dir)
     hooks = settings.setdefault("hooks", {})
     hooks.setdefault("SessionStart", []).append(
         {"hooks": [{"type": "command", "command": commands["watchdog"], "timeout": 10}]})
-    hooks.setdefault("PreToolUse", []).append(
-        {"matcher": matcher, "hooks": [{"type": "command", "command": commands["guard"], "timeout": 10}]})
+    for matcher in matchers:
+        hooks.setdefault("PreToolUse", []).append(
+            {"matcher": matcher, "hooks": [{"type": "command", "command": commands["guard"], "timeout": 10}]})
     return settings
 
 
@@ -238,7 +246,8 @@ def _user_scope_warning(home: Path) -> str | None:
     return None
 
 
-def plan_install(project: Path, home: Path, plugin_root: Path, managed: list[Path] | None = None) -> dict:
+def plan_install(project: Path, home: Path, plugin_root: Path, managed: list[Path] | None = None,
+                 strict: bool | None = None) -> dict:
     names = load_names(plugin_root)
     net_dir = home.resolve() / ".config" / "outbound-gates"
     user_path = home / ".claude" / "settings.json"
@@ -256,10 +265,16 @@ def plan_install(project: Path, home: Path, plugin_root: Path, managed: list[Pat
                     legacy.append(command)
     check = _load_session_check(plugin_root)
     warnings = check.policy_warnings(project, home, managed)
+    manifest = read_settings(net_dir / "installed.json")
+    projects = manifest.get("projects") or {}
+    if strict is None:  # sticky: a re-run keeps the project's current mode
+        strict = bool((projects.get(str(project)) or {}).get("strict"))
+    others_strict = any((v or {}).get("strict") for k, v in projects.items() if k != str(project))
     warnings += [w for w in (_gitignore_warning(project), _user_scope_warning(home)) if w]
     return {"project": project, "home": home, "plugin_root": plugin_root, "net_dir": net_dir,
             "version": plugin_version(plugin_root), "names": names, "deny_new": deny_new,
-            "legacy": legacy, "warnings": warnings, "user_path": user_path, "local_path": local_path}
+            "legacy": legacy, "warnings": warnings, "user_path": user_path, "local_path": local_path,
+            "strict": strict, "any_strict": strict or others_strict}
 
 
 def describe_install(plan: dict) -> list[str]:
@@ -267,7 +282,12 @@ def describe_install(plan: dict) -> list[str]:
     lines = [f"Setup plan for {plan['project']} (plugin {plan['version']}):",
              f"  copy session_check.py, gate-net.sh, blocked.json, setup.py into {net}",
              f"  {plan['user_path']}: SessionStart -> gate-net.sh watchdog; PreToolUse -> gate-net.sh draft-guard",
-             f"    guard matcher covers {len(plan['names']['guard_names'])} send names plus Gmail drafts, on any server"]
+             f"    guard matcher covers {len(plan['names']['guard_names'])} send names plus Gmail drafts, on any server"
+             if not plan["any_strict"] else
+             "    guard runs on every MCP tool and on Bash, Edit and Write (a strict project is set up)"]
+    if plan["strict"]:
+        lines += [f"  strict mode for {plan['project']}: only read tools and {net / 'allow.json'} entries run;",
+                  "    Bash mail commands, data-sending curl/wget and edits to the gate's own files are refused"]
     for command in plan["legacy"]:
         lines.append(f"    replace manual hook: {command}")
     if plan["deny_new"]:
@@ -296,7 +316,8 @@ def apply_install(plan: dict, stamp: str) -> list[str]:
     atomic_write(net / "blocked.json", (json.dumps(blocked, indent=2) + "\n").encode("utf-8"), 0o600)
 
     changed = []
-    if write_settings(plan["user_path"], lambda s: install_user_hooks(s, net, plan["names"]["matcher"]), stamp):
+    matchers = guard_matchers(plan["names"]["matcher"], plan["any_strict"])
+    if write_settings(plan["user_path"], lambda s: install_user_hooks(s, net, matchers), stamp):
         changed.append(str(plan["user_path"]))
     if write_settings(plan["local_path"], lambda s: add_deny(s, plan["names"]["deny_rules"]), stamp):
         changed.append(str(plan["local_path"]))
@@ -306,6 +327,9 @@ def apply_install(plan: dict, stamp: str) -> list[str]:
     manifest = read_settings(manifest_path) or {"schema": SCHEMA, "projects": {}}
     entry = manifest.setdefault("projects", {}).setdefault(str(plan["project"]), {"deny_added": []})
     entry["deny_added"] += [n for n in plan["deny_new"] if n not in entry["deny_added"]]
+    entry["strict"] = bool(plan["strict"])
+    if plan["strict"] and not (net / "allow.json").exists():
+        atomic_write(net / "allow.json", (json.dumps({"schema": SCHEMA, "allow": []}, indent=2) + "\n").encode(), 0o600)
     manifest.update({"schema": SCHEMA, "version": plan["version"], "user_hooks": True})
     atomic_write(manifest_path, (json.dumps(manifest, indent=2) + "\n").encode("utf-8"), 0o600)
     return changed
@@ -367,6 +391,9 @@ def main(argv: list[str] | None = None, home: Path | None = None, managed: list[
     parser.add_argument("--uninstall", action="store_true", help="remove what setup added for this project")
     parser.add_argument("--all", action="store_true", help="with --uninstall: every project and the user-level hooks")
     parser.add_argument("--yes", action="store_true", help="apply the plan (without it, only print it)")
+    parser.add_argument("--strict", action="store_true",
+                        help="strict mode for this project: allow-list for MCP tools, Bash and file-edit guard")
+    parser.add_argument("--no-strict", action="store_true", help="turn strict mode off for this project")
     args = parser.parse_args(argv)
     home = home or Path.home()
     project = Path(args.project).expanduser().resolve()
@@ -391,11 +418,15 @@ def main(argv: list[str] | None = None, home: Path | None = None, managed: list[
         plugin_root = Path(args.plugin_root).expanduser().resolve()
         if not project.is_dir():
             raise SetupError(f"project folder not found: {project}")
-        plan = plan_install(project, home, plugin_root, managed)
+        if args.strict and args.no_strict:
+            raise SetupError("use --strict or --no-strict, not both")
+        mode = True if args.strict else False if args.no_strict else None
+        plan = plan_install(project, home, plugin_root, managed, mode)
         print("\n".join(describe_install(plan)))
         if not args.yes:
             print(f"\nTo apply, run: python3 \"{plugin_root / 'gates' / 'setup.py'}\" --project \"{project}\" "
-                  f"--plugin-root \"{plugin_root}\" --yes")
+                  f"--plugin-root \"{plugin_root}\"" + (" --strict" if args.strict else " --no-strict" if args.no_strict else "")
+                  + " --yes")
             return 0
         for path in apply_install(plan, stamp):
             print(f"changed {path} (backup kept next to it)")

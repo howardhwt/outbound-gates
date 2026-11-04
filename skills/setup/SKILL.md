@@ -34,6 +34,10 @@ A person applies every change. The agent may run the preview, which writes nothi
 
 5. **Live check (in the new session).** Confirm the first lines include "send gate: on". Then call Gmail `update_draft` with draftId `gate-probe-nonexistent-0000` and subject `gate probe`. Expect a deny that starts with "send gate:". Never call a send, reply or forward tool to test anything.
 
+## Strict mode
+
+If the person asks for strict mode, add `--strict` to both the preview and the apply command. In a strict project only read tools and entries in `~/.config/outbound-gates/allow.json` run. Bash mail and data-sending commands are refused, and so are edits to the gate's own files. Tell the person that write tools their workflow needs (for example HubSpot updates) must be added to `allow.json` by them. `--no-strict` turns it off.
+
 ## Check later
 
 Anyone can re-run the selftest. It only reads:

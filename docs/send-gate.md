@@ -64,6 +64,17 @@ It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<d
 
    It removes only the deny rules setup added, the hooks once no project uses them (or with `--all`), and the copied files.
 
+### Strict mode (`--strict`)
+
+Strict mode is opt-in per project. Add `--strict` to the setup command, both the preview and the apply. It stays on when setup is re-run, and `--no-strict` turns it off. In a strict project the user-level guard runs on every MCP tool and on Bash, Edit and Write, and also refuses:
+
+- **any MCP tool that isn't a read,** from any server. A read is a tool name with a read verb (`get`, `list`, `search`, `read`, `query`, `find`, `fetch`, `show`, `describe`, `count`, `lookup`, `view`) and no write verb (`send`, `create`, `update`, `run`, `manage` and so on). Gmail `create_draft` is allowed by default, and the plugin gate checks it. A person allows more tools by adding their names to `~/.config/outbound-gates/allow.json`, for example `{"allow": ["manage_crm_objects"]}`. The refusal message names the exact entry. This blocks Make, calendar invites, Slack canvases and uploads, and future write tools without anyone listing them.
+- **Bash commands that send mail:** `sendmail`, `mail -s`, `mutt`, `swaks`, `msmtp`, `smtplib`, and `osascript` driving Mail, Messages or Outlook.
+- **Bash commands that send data over the network:** `curl` with `-d`, `--data*`, `-F`, `-T` or `--json`, or as POST, PUT or PATCH; `wget` with post data; HTTPie POST; `requests.post`; `urlopen(..., data=)`. Plain `curl` and `wget` reads still work.
+- **Changes to the gate's own files:** Bash commands that change or delete anything under the settings files, `~/.config/outbound-gates/`, `~/.claude/plugins/` or `.gates/`, and Edit or Write on those paths. Reading them is fine, and so is `python -m gates.evidence record`.
+
+The selftest runs sample calls through the strict guard. These checks match patterns, so an obfuscated command (an encoded script, a renamed binary) can still get through. Strict mode raises the bar; containment still needs the send service.
+
 Setup is a speed bump, not a lock: the agent never runs `--yes` or `--uninstall` itself, but an agent running as you could run the printed command or edit the files. The send service planned in `TODOS.md` is what removes that.
 
 ### Is the gate on?
@@ -143,7 +154,7 @@ After setup on a real outbound folder (selftest 16/16), a fresh session with the
 - Apollo `website_visitor_domain_tracker_send_install_email` and Make `scenarios_run` and `rpc_execute` are blocked, with Make denied in the project too.
 - A project setup recorded keeps its guard when `.gates/` is deleted, and the watchdog warns.
 
-Still open: gaps 1 to 3, the rest of 4, and 6.
+Still open: gaps 1 to 3, the rest of 4, and 6. Strict mode (below, opt-in) narrows 1, 2 and 4: Bash mail and data-sending commands, edits to the gate's files, and non-read MCP tools are refused. The browser skills (3) and remote runs (6) stay open.
 
 **What this means.** The net stops an agent that reaches for the obvious send tools. It does not stop a determined agent running as you, and a list of blocked names can't be complete. The fixes that close these gaps are an allow-list (deny whole outbound servers in the project, then allow named read tools), a Bash hook for outbound network and mail commands, and above all the send service in `TODOS.md`, which takes send credentials away from the agent's machine account. Until then, treat the net as a guard against mistakes and shortcuts, not as containment.
 
