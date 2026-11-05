@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from .checker import (
+    NAME_RE,
     UsageError,
     extract_numbers,
     html_to_text,
@@ -161,8 +162,13 @@ def apply_user_facts(rules: dict, user: dict, where: Path | str) -> dict:
     user_facts = user.get("own_facts", [])
     if not isinstance(user_facts, list) or not all(isinstance(v, str) for v in user_facts):
         raise UsageError(f"own_facts in {where} must be a list of strings, e.g. [\"$0.01\"]")
+    names = user.get("names", [])
+    if not isinstance(names, list) or not all(isinstance(v, str) and NAME_RE.match(v) for v in names):
+        raise UsageError(f"names in {where} must be a list of single words with a letter and a digit, "
+                         "e.g. [\"H3\", \"1080p\"]")
     rules = dict(rules)
     rules["own_facts"] = _union(rules.get("own_facts", []), user_facts)
+    rules["names"] = _union(rules.get("names", []), names)
     return rules
 
 

@@ -125,7 +125,7 @@ Clock times, calendar dates and anything inside a URL are not treated as claims.
 
 The rules come in two kinds.
 
-**Truth rules** are the same for everyone and ship with the plugin in `gates/config.example.json`: every number needs a source (`claims`, `claim_max_age_days`), no statements of what the reader pays (`cost_assertion_patterns`), and a few clichés banned. A project can't loosen them. Your own prices go in `own_facts` in `~/.config/outbound-gates/config.json`, outside the project, because they pass without a source.
+**Truth rules** are the same for everyone and ship with the plugin in `gates/config.example.json`: every number needs a source (`claims`, `claim_max_age_days`), no statements of what the reader pays (`cost_assertion_patterns`), and a few clichés banned. A project can't loosen them. Your own prices go in `own_facts` in `~/.config/outbound-gates/config.json`, outside the project, because they pass without a source. Names with digits in them, such as a model called `H3` or a format like `1080p`, go in `names` there, so they aren't read as numbers.
 
 **Style** is how your emails read, and each project chooses its own in `<project>/.gates/style.json`:
 

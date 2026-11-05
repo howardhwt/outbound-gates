@@ -38,6 +38,16 @@ DEFAULT_NUMBER_IGNORE = [
 ]
 
 
+NAME_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)\S{1,40}$")
+
+
+def name_patterns(names: Iterable[str]) -> list[str]:
+    """Patterns that hide names with digits in them (a model "H3", "1080p") from
+    the number check. Each name must contain a letter, so a bare number can't be
+    listed as a name, and it matches only as a whole token."""
+    return [rf"(?<![\w.$]){re.escape(n)}(?!\w)" for n in names]
+
+
 class UsageError(ValueError):
     """A problem with the inputs, as opposed to a problem with the draft."""
 
@@ -358,7 +368,7 @@ def check_claims(
     )
     allowed = sourced | own_facts | derived
     seen: set[str] = set()
-    ignore = config.get("number_ignore_patterns", DEFAULT_NUMBER_IGNORE)
+    ignore = list(config.get("number_ignore_patterns", DEFAULT_NUMBER_IGNORE)) + name_patterns(config.get("names", []))
     for token, value in extract_numbers(text, ignore):
         if value in seen:
             continue
