@@ -188,6 +188,10 @@ python -m pytest
 
 The tests cover both gates, the demo's outcome for every account, the walkthrough files, and the awkward inputs real tools produce: curly quotes, Windows line endings, dates, URLs, malformed files and messy CRM exports. They run on every push against Python 3.9 through 3.14.
 
+## Releasing
+
+Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.5.1 && git push origin outbound-gates--v0.5.1`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
+
 ## Known limits
 
 - The `cost_assertion` rule matches phrases, so a harmless sentence containing "you pay" is blocked too. It also treats a question as an assertion if the sentence contains an abbreviation with a full stop, such as "e.g.". Reword the sentence or adjust the patterns in the config.
