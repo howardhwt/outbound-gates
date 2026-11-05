@@ -234,3 +234,43 @@ def test_record_command_exit_codes(tmp_path, capsys):
 def test_record_command_has_no_domain_flag():
     with pytest.raises(SystemExit):
         evidence.main(["record", "--domain", "x.com"])
+
+
+# --- own facts from the user's config ---
+
+def test_user_own_facts_are_added_to_the_plugin_list(tmp_path):
+    project = tmp_path / "proj"
+    (project / ".gates").mkdir(parents=True)
+    user = write(tmp_path / "user.json", {"own_facts": ["$0.01", "1"]})
+    facts = evidence.load_settings(ROOT, project, user_config=user)["rules"]["own_facts"]
+    assert "$0.002" in facts and "$0.01" in facts and "1" in facts
+
+
+def test_project_cannot_add_own_facts(tmp_path):
+    project = tmp_path / "proj"
+    write(project / ".gates" / "config.json", {"own_facts": ["70%"]})
+    facts = evidence.load_settings(ROOT, project, user_config=tmp_path / "none.json")["rules"]["own_facts"]
+    assert "70%" not in facts
+
+
+@pytest.mark.parametrize("bad", ["$0.01", [1], {"a": 1}])
+def test_user_own_facts_must_be_a_list_of_strings(tmp_path, bad):
+    project = tmp_path / "proj"
+    (project / ".gates").mkdir(parents=True)
+    user = write(tmp_path / "user.json", {"own_facts": bad})
+    with pytest.raises(UsageError, match="own_facts"):
+        evidence.load_settings(ROOT, project, user_config=user)
+
+
+def test_user_own_fact_passes_the_gate_and_feeds_calculations(tmp_path, monkeypatch):
+    from datetime import date
+    from gates import checker
+    project = tmp_path / "proj"
+    (project / ".gates").mkdir(parents=True)
+    user = write(tmp_path / "user.json", {"own_facts": ["$0.01"]})
+    rules = evidence.load_settings(ROOT, project, user_config=user)["rules"]
+    findings = list(checker.check_claims("We charge $0.01 per second.", rules, [], date(2026, 11, 4), []))
+    assert not [f for f in findings if f.severity == "fail"]
+    assert evidence.check_calc({"formula": "theirs / ours", "inputs": {
+        "theirs": {"value": "0.02", "source": "claim"}, "ours": {"value": "$0.01", "source": "own"}}, "show": "2"},
+        {"0.02"}, {checker.normalise_number(v) for v in rules["own_facts"]}) is None

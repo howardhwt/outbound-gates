@@ -143,6 +143,7 @@ After changing the plugin's files, run `claude plugin marketplace update outboun
 | HubSpot key | `~/.config/outbound-gates/hubspot.key` only | Kept out of the project folder. Never printed or logged. |
 | `blocked_tools`, `banned_phrases` | `<project>/.gates/config.json` | Can only **add** to the plugin's lists, never remove. |
 | `source_allowlist` | `~/.config/outbound-gates/config.json` only | Kept out of the project folder the agent writes to. |
+| `own_facts` (your own prices and product numbers) | `~/.config/outbound-gates/config.json` only, e.g. `{"own_facts": ["$0.01"]}` | They pass without a source, so only you set them, outside the project. Added to the plugin's list; a project's `.gates/config.json` can't add any. Numbers compare by value, so `1 cent` needs `"1"`. In strict mode the agent can't edit this file. |
 | evidence required | always on | No setting turns it off. |
 
 ## Live HubSpot
