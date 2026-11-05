@@ -87,7 +87,7 @@ def classify(payload: dict, plugin_root: Path, project_dir: Path) -> tuple[str, 
     return "pass", short
 
 
-def _draft_from_input(tool_input: dict):
+def _draft_from_input(tool_input: dict, crm_bcc: tuple[str, ...] | list[str] = ()):
     from email.utils import getaddresses
 
     from gates.checker import html_to_text
@@ -99,10 +99,14 @@ def _draft_from_input(tool_input: dict):
         if key not in DRAFT_FIELDS and key not in REFUSED_FIELDS:
             raise ValueError(f"unexpected field {key}; the gate only checks known draft fields")
     recipients = []
+    logging = {a.lower() for a in crm_bcc}
     for key in ("to", "cc", "bcc"):
         value = tool_input.get(key) or []
         values = [value] if isinstance(value, str) else list(value)
-        recipients += [addr for _, addr in getaddresses([str(v) for v in values]) if addr]
+        found = [addr for _, addr in getaddresses([str(v) for v in values]) if addr]
+        if key == "bcc":  # your CRM's logging address, from your own config, isn't a recipient
+            found = [addr for addr in found if addr.lower() not in logging]
+        recipients += found
     if len(recipients) != 1:
         raise ValueError(f"one recipient per gated draft (found {len(recipients)} across to, cc and bcc)")
     bodies = []
@@ -207,11 +211,11 @@ def decide(raw: str, env: dict, today=None, now=None, *, deadline=None, transpor
     from gates.evidence import EvidenceError, contact_parts, load_settings, read_crm
 
     try:
-        draft = _draft_from_input(payload.get("tool_input") or {})
+        settings = load_settings(plugin_root, project_dir)
+        draft = _draft_from_input(payload.get("tool_input") or {}, settings["crm_bcc"])
         domain, _ = contact_parts(draft.recipient)
         entry["recipient_domain"] = domain
         entry["contact_sha256"] = hashlib.sha256(draft.recipient.lower().encode()).hexdigest()
-        settings = load_settings(plugin_root, project_dir)
         entry["style"] = settings["style_source"]
         entry["crm_path"] = "hubspot" if settings["crm_source"] == "hubspot" else str(settings["crm_path"])
         crm, warnings = read_crm(settings, draft.recipient, deadline=deadline, transport=transport)
@@ -225,6 +229,7 @@ def decide(raw: str, env: dict, today=None, now=None, *, deadline=None, transpor
     entry["decision"] = "allow" if verdict.passed else "deny"
     entry["rules"] = sorted({f.rule for f in verdict.findings if f.severity == "fail"})
     entry["inputs_sha256"] = verdict.inputs_sha256
+    entry["register"] = verdict.register
     entry["warnings"] = len(warnings)
     _log(gates_home, entry)
     if verdict.passed:

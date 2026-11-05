@@ -125,14 +125,14 @@ Clock times, calendar dates and anything inside a URL are not treated as claims.
 
 The rules come in two kinds.
 
-**Truth rules** are the same for everyone and ship with the plugin in `gates/config.example.json`: every number needs a source (`claims`, `claim_max_age_days`), no statements of what the reader pays (`cost_assertion_patterns`), and a few clichés banned. A project can't loosen them. Your own prices go in `own_facts` in `~/.config/outbound-gates/config.json`, outside the project, because they pass without a source.
+**Truth rules** are the same for everyone and ship with the plugin in `gates/config.example.json`: every number needs a source (`claims`, `claim_max_age_days`), no statements of what the reader pays (`cost_assertion_patterns`), and a few clichés banned. A project can't loosen them. Your own prices go in `own_facts` in `~/.config/outbound-gates/config.json`, outside the project, because they pass without a source. Names with digits in them, such as a model called `H3` or a format like `1080p`, go in `names` there, so they aren't read as numbers.
 
 **Style** is how your emails read, and each project chooses its own in `<project>/.gates/style.json`:
 
 | Style key | What it sets | How it combines |
 |---|---|---|
-| `registers` | Per register (`cold`, `follow_up`, or a new one): `words` `[low, high]`, `sign_off`, `required_close` | Merged key by key over the defaults |
-| `max_spaced_hyphens` | The most ` - ` a draft may use | Replaces; absent means no limit |
+| `registers` | Per register (`cold`, `follow_up`, or a new one): `words` `[low, high]`, `sign_off`, `required_close`, and its own `max_spaced_hyphens` | Merged key by key over the defaults |
+| `max_spaced_hyphens` | The most ` - ` a draft may use, unless its register sets its own | Replaces; absent means no limit |
 | `min_contractions` | Fewer contractions than this is a warning | Replaces |
 | `banned_phrases` | Extra phrases to block | Only adds |
 | `bold_allowed_patterns` | Regexes bold text must match | Only adds; absent means bold is allowed |

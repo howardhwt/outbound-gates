@@ -274,3 +274,37 @@ def test_user_own_fact_passes_the_gate_and_feeds_calculations(tmp_path, monkeypa
     assert evidence.check_calc({"formula": "theirs / ours", "inputs": {
         "theirs": {"value": "0.02", "source": "claim"}, "ours": {"value": "$0.01", "source": "own"}}, "show": "2"},
         {"0.02"}, {checker.normalise_number(v) for v in rules["own_facts"]}) is None
+
+
+# --- names with digits (user config) ------------------------------------------------
+
+def test_user_names_stop_counting_as_numbers(tmp_path):
+    from gates import checker
+    project = tmp_path / "proj"
+    (project / ".gates").mkdir(parents=True)
+    user = write(tmp_path / "user.json", {"names": ["H3", "1080p"]})
+    rules = evidence.load_settings(ROOT, project, user_config=user)["rules"]
+    text = "We supply H3 at 1080p. h3 again. But 3 seconds, 1080 frames and H30 are numbers."
+    flagged = [f.message for f in checker.check_claims(text, rules, [], None, [])]
+    assert any("'3'" in m for m in flagged) and any("'1080'" in m for m in flagged)
+    assert any("'30'" in m for m in flagged)
+    assert len(flagged) == 3
+
+
+@pytest.mark.parametrize("bad", ["H3", ["3"], ["$0.16"], ["two words1"], [""], ["x" * 41 + "1"], [3]])
+def test_names_must_be_words_with_a_letter_and_a_digit(tmp_path, bad):
+    project = tmp_path / "proj"
+    (project / ".gates").mkdir(parents=True)
+    user = write(tmp_path / "user.json", {"names": bad})
+    with pytest.raises(UsageError, match="names"):
+        evidence.load_settings(ROOT, project, user_config=user)
+
+
+def test_project_cannot_add_names(tmp_path):
+    project = tmp_path / "proj"
+    write(project / ".gates" / "config.json", {"names": ["H3"]})
+    rules = evidence.load_settings(ROOT, project, user_config=tmp_path / "none.json")["rules"]
+    assert "names" not in rules
+    with pytest.raises(UsageError, match="unknown key"):
+        from gates import checker
+        checker.validate_style({"names": ["H3"]})

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from .checker import (
+    NAME_RE,
     UsageError,
     extract_numbers,
     html_to_text,
@@ -145,14 +146,30 @@ def project_rules(plugin_root: Path, project_dir: Path) -> tuple[dict, str]:
     return rules, source
 
 
+def _crm_bcc(user: dict, where: Path | str) -> list[str]:
+    """Your CRM's logging addresses (for example HubSpot's BCC address). A draft
+    may carry them in bcc on top of its one recipient. User config only, so the
+    agent can't add an address that copies mail somewhere else."""
+    value = user.get("crm_bcc", [])
+    if not (isinstance(value, list) and all(isinstance(v, str) and "@" in v and not re.search(r"\s", v) for v in value)):
+        raise UsageError(f"crm_bcc in {where} must be a list of email addresses")
+    return [v.strip().lower() for v in value]
+
+
 def apply_user_facts(rules: dict, user: dict, where: Path | str) -> dict:
     """Add the user's own facts to the rules. They pass without a source, so they
     come only from the user's own config, never the project, and only add."""
     user_facts = user.get("own_facts", [])
     if not isinstance(user_facts, list) or not all(isinstance(v, str) for v in user_facts):
         raise UsageError(f"own_facts in {where} must be a list of strings, e.g. [\"$0.01\"]")
+    names = user.get("names", [])
+    if not isinstance(names, list) or not all(isinstance(v, str) and NAME_RE.match(v) for v in names):
+        raise UsageError(f"names in {where} must be a list of single words with a letter and a digit, "
+                         "e.g. [\"H3\", \"1080p\"]")
     rules = dict(rules)
     rules["own_facts"] = _union(rules.get("own_facts", []), user_facts)
+    if names:
+        rules["names"] = _union(rules.get("names", []), names)
     return rules
 
 
@@ -189,6 +206,7 @@ def load_settings(
         "max_unanswered": project.get("max_unanswered", defaults.get("max_unanswered")),
         "blocked_tools": _union(defaults.get("blocked_tools", []), project.get("blocked_tools", [])),
         "source_allowlist": [normalise_domain(h) for h in user.get("source_allowlist", [])],
+        "crm_bcc": _crm_bcc(user, user_file),
         "crm_source": project.get("crm_source", "file"),
         "crm_path": None,
         "hubspot": project.get("hubspot", {}),

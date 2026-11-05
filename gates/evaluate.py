@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -56,6 +57,7 @@ class Verdict:
     crm_path: str | None = None
     claims_used: int = 0
     verified_claims: int = 0
+    register: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -140,9 +142,18 @@ def _with_checked_maths(contact: str, rules: dict, claims: list, verified: list,
     return findings, claims, verified
 
 
+def register_for(subject: str, rules: dict, default: str) -> str:
+    """A reply ("Re: ...") is a follow-up, so it gets the follow_up register when
+    the rules have one. Anything else gets the project's register."""
+    if re.match(r"\s*re\s*:", subject or "", re.I) and "follow_up" in rules.get("registers", {}):
+        return "follow_up"
+    return default
+
+
 def evaluate(draft: Draft, crm: dict, settings: dict, *, gates_home: Path, today: date,
              crm_warnings: Sequence[str] = ()) -> Verdict:
-    rules, register = settings["rules"], settings["register"]
+    rules = settings["rules"]
+    register = register_for(draft.subject, rules, settings["register"])
     claims = evidence.claims_for(gates_home, draft.recipient)
     verified = [i for i, claim in enumerate(claims) if evidence.verify_claim(claim, gates_home)]
     sourced_claims = len(claims)
@@ -172,4 +183,5 @@ def evaluate(draft: Draft, crm: dict, settings: dict, *, gates_home: Path, today
         crm_path=str(crm_path) if crm_path else None,
         claims_used=sourced_claims,
         verified_claims=len(verified),
+        register=register,
     )
