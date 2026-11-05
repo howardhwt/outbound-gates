@@ -1,0 +1,36 @@
+name: release
+
+# Push a tag like outbound-gates--v0.5.1 to publish that version.
+# The zip is what `claude --plugin-url .../releases/latest/download/outbound-gates.zip` installs,
+# so it is built here from the tag, never by hand.
+on:
+  push:
+    tags: ["outbound-gates--v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tag matches plugin.json
+        id: version
+        run: echo "version=$(python3 .github/scripts/release_check.py "$GITHUB_REF_NAME")" >> "$GITHUB_OUTPUT"
+      - name: Tests pass on the tagged commit
+        run: |
+          pip install -r requirements-dev.txt
+          python -m pytest -q
+      - name: Build the zip (plugin at the zip root, without tests or CI files)
+        run: git archive --format zip -o outbound-gates.zip "$GITHUB_REF_NAME" ':!tests' ':!.github'
+      - name: Publish a final release (not draft, not prerelease) and mark it latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" outbound-gates.zip \
+            --title "outbound-gates ${{ steps.version.outputs.version }}" \
+            --generate-notes --latest
