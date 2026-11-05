@@ -9,7 +9,7 @@ from gates.funnel import funnel
 from gates.presend import find_company, load_crm
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = load_config(ROOT / "gates" / "config.example.json")
+CONFIG = load_config(ROOT / "demo" / "rules.json")
 CRM = load_crm(DEMO / "mock_crm.json")
 CANDIDATES = json.loads((DEMO / "candidates.json").read_text())
 

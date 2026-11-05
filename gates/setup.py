@@ -10,6 +10,8 @@ layers that hold when it isn't:
                                        PreToolUse (generated matcher) -> gate-net.sh draft-guard
   <project>/.claude/settings.local.json  permissions.deny for known send tools
   <project>/.gates/                    created if missing
+  <project>/.gates/style.json          the project's writing style: written for a new
+                                       project ({} = neutral) or when --style is given
 
 A person runs it, in two steps (the agent may run only the first):
 
@@ -19,7 +21,7 @@ A person runs it, in two steps (the agent may run only the first):
 
 The preview prints a PLANHASH; --yes needs it and refuses (exit 3) if the plan
 changed since. Optional at install: --strict/--no-strict, --check-names FILE
-(advisory), and a guided first run: --crm-source file|hubspot, --crm-path,
+(advisory), --style neutral|example|FILE, and a guided first run: --crm-source file|hubspot, --crm-path,
 --sender-owner. Every applied run appends a line to setup.log.
 
 Uninstall runs from the copy, so it works after the plugin is removed. Setup
@@ -28,7 +30,7 @@ just before writing and kept. Each changed settings file gets a backup.
 
 Standalone and stdlib only (it is copied out of the plugin), so it does not
 import the gates package. Exit codes: 0 done, 1 refused, selftest failed or the
-first-run config step was skipped, 2 bad input, 3 plan changed since preview.
+first-run config or style step was skipped, 2 bad input, 3 plan changed since preview.
 """
 from __future__ import annotations
 
@@ -357,6 +359,61 @@ def plan_config(project: Path, home: Path, crm_source: str | None, crm_path: str
     return {"add": add if not problems else {}, "error": "; ".join(problems) or None}
 
 
+STYLES = {"neutral": {}, "example": {"preset": "example"}}
+
+
+def _load_checker(plugin_root: Path):
+    spec = importlib.util.spec_from_file_location("_og_checker", plugin_root / "gates" / "checker.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses look their module up while it loads
+    spec.loader.exec_module(module)
+    return module
+
+
+def style_sha(project: Path) -> str | None:
+    """The sha256 of the project's style.json, or None when it has none."""
+    path = project / ".gates" / "style.json"
+    return _sha(path.read_bytes()) if path.is_file() else None
+
+
+def plan_style(project: Path, plugin_root: Path, choice: str | None) -> dict:
+    """What to write to .gates/style.json, or why the step is skipped.
+
+    A new project (no .gates/ yet) gets the neutral style unless --style says
+    otherwise. An existing project is left alone unless --style is given, and an
+    existing style.json that differs is never overwritten.
+    """
+    path = project / ".gates" / "style.json"
+    if choice is None and (project / ".gates").exists():
+        return {"write": None, "label": None, "error": None}
+    choice = choice or "neutral"
+    if choice in STYLES:
+        style, label = STYLES[choice], choice
+    else:
+        source = Path(choice).expanduser()
+        try:
+            style = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as err:
+            raise SetupError(f"cannot read --style file {source}: {err}") from None
+        label = f"from {source}"
+    checker = _load_checker(plugin_root)
+    try:
+        checker.validate_style(style, f"--style {choice}")
+    except checker.UsageError as err:
+        raise SetupError(str(err)) from None
+    data = (json.dumps(style, indent=2) + "\n").encode("utf-8")
+    if path.is_file():
+        try:
+            current = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            current = None
+        if current == style:
+            return {"write": None, "label": label, "error": None}
+        return {"write": None, "label": label,
+                "error": f"{path} already holds a different style; edit it by hand or move it away first"}
+    return {"write": data, "label": label, "error": None}
+
+
 def check_names(names_file: str | None, deny_rules: list[str], project: Path, home: Path) -> list[str]:
     """Advisory: does each deny rule name a tool the agent listed, one already denied, or neither?"""
     if not names_file:
@@ -380,7 +437,7 @@ def check_names(names_file: str | None, deny_rules: list[str], project: Path, ho
 
 def plan_install(project: Path, home: Path, plugin_root: Path, managed: list[Path] | None = None,
                  strict: bool | None = None, config: dict | None = None,
-                 names_file: str | None = None) -> dict:
+                 names_file: str | None = None, style: dict | None = None) -> dict:
     names = load_names(plugin_root)
     net_dir = home.resolve() / ".config" / "outbound-gates"
     user_path = home / ".claude" / "settings.json"
@@ -407,15 +464,18 @@ def plan_install(project: Path, home: Path, plugin_root: Path, managed: list[Pat
     version = plugin_version(plugin_root)
     copies = _copies(plugin_root, version, names)
     config = config or {"add": {}, "error": None}
+    style = style or {"write": None, "label": None, "error": None}
     plan = {"project": project, "home": home, "plugin_root": plugin_root, "net_dir": net_dir,
             "version": version, "names": names, "deny_new": deny_new,
             "legacy": legacy, "warnings": warnings, "user_path": user_path, "local_path": local_path,
             "strict": strict, "any_strict": strict or others_strict, "copies": copies, "config": config,
+            "style": style,
             "name_check": check_names(names_file, names["deny_rules"], project, home)}
     plan["hash"] = plan_hash({"action": "install", "project": str(project), "version": version,
                               "deny_new": deny_new, "legacy": legacy, "strict": strict,
                               "matchers": guard_matchers(names["matcher"], plan["any_strict"]),
-                              "copies": {k: _sha(v) for k, v in copies.items()}, "config": config["add"]})
+                              "copies": {k: _sha(v) for k, v in copies.items()}, "config": config["add"],
+                              "style": _sha(style["write"]) if style["write"] else None})
     return plan
 
 
@@ -444,6 +504,14 @@ def describe_install(plan: dict) -> list[str]:
                      ", ".join(f"{k}={v!r}" for k, v in plan["config"]["add"].items()))
     if plan["config"]["error"]:
         lines.append(f"  first-run config step skipped: {plan['config']['error']}")
+    style_path = plan["project"] / ".gates" / "style.json"
+    if plan["style"]["write"]:
+        lines.append(f"  {style_path}: write the {plan['style']['label']} style")
+    elif plan["style"]["error"]:
+        lines.append(f"  style step skipped: {plan['style']['error']}")
+    elif not style_path.exists():
+        lines.append(f"  {style_path}: none, so the gate keeps the example style "
+                     "(word counts, sign-offs, closing line); --style neutral|example|FILE sets one")
     lines += [f"  warning: {w}" for w in plan["warnings"]]
     lines += plan["name_check"]
     lines.append(f"PLANHASH {plan['hash']}")
@@ -469,6 +537,10 @@ def apply_install(plan: dict, stamp: str) -> list[str]:
         merged = {**read_settings(config_path), **plan["config"]["add"]}
         atomic_write(config_path, (json.dumps(merged, indent=2) + "\n").encode("utf-8"))
         changed.append(str(config_path))
+    if plan["style"]["write"]:
+        style_path = plan["project"] / ".gates" / "style.json"
+        atomic_write(style_path, plan["style"]["write"])
+        changed.append(str(style_path))
 
     manifest_path = net / "installed.json"
     manifest = read_settings(manifest_path) or {"schema": SCHEMA, "projects": {}}
@@ -476,6 +548,7 @@ def apply_install(plan: dict, stamp: str) -> list[str]:
     entry["deny_added"] += [n for n in plan["deny_new"] if n not in entry["deny_added"]]
     entry["strict"] = bool(plan["strict"])
     entry["deny_rules"] = list(plan["names"]["deny_rules"])
+    entry["style_sha256"] = style_sha(plan["project"])  # the session check reports a change to the person
     if plan["strict"] and not (net / "allow.json").exists():
         atomic_write(net / "allow.json", (json.dumps({"schema": SCHEMA, "allow": []}, indent=2) + "\n").encode(), 0o600)
     manifest.update({"schema": SCHEMA, "version": plan["version"], "user_hooks": True,
@@ -571,6 +644,8 @@ def main(argv: list[str] | None = None, home: Path | None = None, managed: list[
     parser.add_argument("--crm-source", choices=["file", "hubspot"], help="first run: where the gate reads the CRM")
     parser.add_argument("--crm-path", help="first run, file mode: the CRM export")
     parser.add_argument("--sender-owner", help="first run: your HubSpot owner id")
+    parser.add_argument("--style", metavar="neutral|example|FILE",
+                        help="the project's writing style (.gates/style.json); new projects get neutral")
     args = parser.parse_args(argv)
     home = home or Path.home()
     project = Path(args.project).expanduser().resolve()
@@ -607,14 +682,15 @@ def main(argv: list[str] | None = None, home: Path | None = None, managed: list[
 
         def build():
             config = plan_config(project, home, args.crm_source, args.crm_path, args.sender_owner)
-            return plan_install(project, home, plugin_root, managed, mode, config, args.check_names)
+            style = plan_style(project, plugin_root, args.style)
+            return plan_install(project, home, plugin_root, managed, mode, config, args.check_names, style)
 
         plan = build()
         print("\n".join(describe_install(plan)))
         if not _confirm(args.yes, plan):
             extra = (" --strict" if args.strict else " --no-strict" if args.no_strict else "")
             for flag, value in (("--crm-source", args.crm_source), ("--crm-path", args.crm_path),
-                                ("--sender-owner", args.sender_owner)):
+                                ("--sender-owner", args.sender_owner), ("--style", args.style)):
                 if value:
                     extra += f' {flag} "{value}"'
             print(f"\nTo apply, run: python3 \"{plugin_root / 'gates' / 'setup.py'}\" --project \"{project}\" "
@@ -640,8 +716,10 @@ def main(argv: list[str] | None = None, home: Path | None = None, managed: list[
     print(test.stdout, end="")
     if plan["config"]["error"]:
         print(f"First-run config step was skipped: {plan['config']['error']}")
+    if plan["style"]["error"]:
+        print(f"Style step was skipped: {plan['style']['error']}")
     print("Start a new Claude Code session in this folder for the hooks to take effect.")
-    return 0 if test.returncode == 0 and not plan["config"]["error"] else 1
+    return 0 if test.returncode == 0 and not plan["config"]["error"] and not plan["style"]["error"] else 1
 
 
 if __name__ == "__main__":

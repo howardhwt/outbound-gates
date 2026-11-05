@@ -212,6 +212,7 @@ def decide(raw: str, env: dict, today=None, now=None, *, deadline=None, transpor
         entry["recipient_domain"] = domain
         entry["contact_sha256"] = hashlib.sha256(draft.recipient.lower().encode()).hexdigest()
         settings = load_settings(plugin_root, project_dir)
+        entry["style"] = settings["style_source"]
         entry["crm_path"] = "hubspot" if settings["crm_source"] == "hubspot" else str(settings["crm_path"])
         crm, warnings = read_crm(settings, draft.recipient, deadline=deadline, transport=transport)
         verdict = evaluate(draft, crm, settings, gates_home=gates_home, today=today or date.today(),

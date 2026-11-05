@@ -12,6 +12,8 @@ import pytest
 from gates import calc, evidence
 from gates.evaluate import Draft, evaluate
 
+from conftest import demo_user_config
+
 ROOT = Path(__file__).resolve().parents[1]
 CONTACT = "dana@northwind-audio.example"
 QUOTE = "Transcription is billed at $0.006 per audio minute"
@@ -94,6 +96,8 @@ def project(tmp_path):
     shutil.copytree(ROOT / "demo" / "pages", proj / "demo" / "pages")
     shutil.copy(ROOT / "demo" / "gate_crm.json", proj / "demo" / "gate_crm.json")
     shutil.copy(ROOT / "demo" / "gate" / "config.json", proj / ".gates" / "config.json")
+    demo_user_config(proj / ".config" / "outbound-gates" / "config.json")
+    demo_user_config(evidence.USER_CONFIG)
     return proj
 
 

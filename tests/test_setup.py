@@ -494,3 +494,83 @@ def test_check_names_is_preview_only(env, tmp_path):
     loaded = tmp_path / "loaded.txt"
     loaded.write_text("")
     assert _main(env, preview_args(env, "--check-names", str(loaded), "--yes", "abc")) == 2
+
+
+# --- style (.gates/style.json) --------------------------------------------------------
+
+def style_of(project):
+    return json.loads((project / ".gates" / "style.json").read_text())
+
+
+def test_new_project_gets_the_neutral_style(env):
+    home, project, _ = env
+    assert run(env, "--yes") == 0
+    assert style_of(project) == {}
+    entry = json.loads((net(home) / "installed.json").read_text())["projects"][str(project.resolve())]
+    assert entry["style_sha256"] == setup.style_sha(project)
+
+
+def test_existing_project_without_style_is_left_alone(env, capsys):
+    home, project, _ = env
+    (project / ".gates").mkdir()
+    assert run(env, "--yes") == 0
+    assert not (project / ".gates" / "style.json").exists()
+    assert "keeps the example style" in capsys.readouterr().out
+    entry = json.loads((net(home) / "installed.json").read_text())["projects"][str(project.resolve())]
+    assert entry["style_sha256"] is None
+
+
+def test_style_example_and_from_a_file(env, tmp_path):
+    _, project, _ = env
+    (project / ".gates").mkdir()
+    assert run(env, "--style", "example", "--yes") == 0
+    assert style_of(project) == {"preset": "example"}
+    other = tmp_path / "proj2"
+    other.mkdir()
+    mine = tmp_path / "mine.json"
+    mine.write_text(json.dumps({"registers": {"cold": {"sign_off": "Best,"}}}))
+    home = env[0]
+    assert setup.main(["--project", str(other), "--plugin-root", str(ROOT), "--style", str(mine)],
+                      home=home, managed=[env[2]]) == 0  # preview is fine
+    preview_hash = _hash_from(["--project", str(other), "--plugin-root", str(ROOT), "--style", str(mine)], env)
+    assert setup.main(["--project", str(other), "--plugin-root", str(ROOT), "--style", str(mine), "--yes", preview_hash],
+                      home=home, managed=[env[2]]) == 0
+    assert style_of(other) == {"registers": {"cold": {"sign_off": "Best,"}}}
+
+
+def test_style_is_in_the_planhash(env):
+    _, project, _ = env
+    argv = ["--project", str(project), "--plugin-root", str(ROOT)]
+    assert _hash_from(argv + ["--style", "neutral"], env) != _hash_from(argv + ["--style", "example"], env)
+
+
+def test_different_style_is_never_overwritten(env, capsys):
+    _, project, _ = env
+    (project / ".gates").mkdir()
+    (project / ".gates" / "style.json").write_text('{"min_contractions": 1}\n')
+    assert run(env, "--style", "example", "--yes") == 1
+    assert "Style step was skipped" in capsys.readouterr().out
+    assert style_of(project) == {"min_contractions": 1}
+
+
+def test_same_style_is_not_a_conflict(env):
+    _, project, _ = env
+    (project / ".gates").mkdir()
+    (project / ".gates" / "style.json").write_text('{"preset": "example"}')
+    assert run(env, "--style", "example", "--yes") == 0
+
+
+@pytest.mark.parametrize("style,error", [
+    ({"own_facts": ["70%"]}, "truth rule"),
+    ({"colour": "blue"}, "unknown key"),
+])
+def test_bad_style_file_is_bad_input(env, tmp_path, capsys, style, error):
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps(style))
+    assert run(env, "--style", str(bad)) == 2
+    assert error in capsys.readouterr().err
+
+
+def test_confirm_line_carries_the_style(env, capsys):
+    run(env, "--style", "example")
+    assert '--style "example" --yes' in capsys.readouterr().out

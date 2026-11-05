@@ -68,6 +68,91 @@ def load_config(path: str | Path) -> dict:
     return config
 
 
+# --- style -------------------------------------------------------------------
+#
+# A style is the house-style part of the rules. It can loosen or tighten length,
+# sign-off, the fixed closing line, contractions and hyphens, and add banned
+# phrases and bold patterns. It can never touch the truth rules (claims, own
+# facts, cost assertions, claim age), so those keys are refused in a style.
+
+STYLE_KEYS = {"registers", "max_spaced_hyphens", "min_contractions", "banned_phrases",
+              "bold_allowed_patterns"}
+REGISTER_KEYS = {"words", "sign_off", "required_close"}
+PRESETS = {"example"}
+MAX_PATTERN_LENGTH = 200
+
+
+def validate_style(style, where: str = "style") -> dict:
+    """A style dict, checked. Raises UsageError naming the bad key and where it belongs."""
+    if not isinstance(style, dict):
+        raise UsageError(f"{where} must be a JSON object")
+    for key in style:
+        if key in ("_comment", "preset"):
+            continue
+        if key in ("own_facts", "claims", "cost_assertion_patterns", "claim_max_age_days", "hubspot"):
+            raise UsageError(f"{where} can't set {key!r}: it is a truth rule, not style"
+                             + (" (own facts go in ~/.config/outbound-gates/config.json)" if key == "own_facts" else ""))
+        if key not in STYLE_KEYS:
+            raise UsageError(f"{where} has an unknown key {key!r}; style keys are {sorted(STYLE_KEYS)}")
+    preset = style.get("preset")
+    if preset is not None and preset not in PRESETS:
+        raise UsageError(f"{where} names an unknown preset {preset!r}; presets are {sorted(PRESETS)}")
+    for name, register in (style.get("registers") or {}).items():
+        if not isinstance(register, dict) or set(register) - REGISTER_KEYS:
+            raise UsageError(f"{where}: register {name!r} may only set {sorted(REGISTER_KEYS)}")
+        words = register.get("words")
+        if words is not None and not (isinstance(words, list) and len(words) == 2
+                                      and all(isinstance(w, int) and w >= 0 for w in words) and words[0] <= words[1]):
+            raise UsageError(f"{where}: register {name!r} words must be [low, high] with 0 <= low <= high")
+        for text_key in ("sign_off", "required_close"):
+            if text_key in register and not isinstance(register[text_key], str):
+                raise UsageError(f"{where}: register {name!r} {text_key} must be text")
+    for key in ("max_spaced_hyphens", "min_contractions"):
+        if key in style and not (isinstance(style[key], int) and style[key] >= 0):
+            raise UsageError(f"{where}: {key} must be a whole number, 0 or more")
+    for key in ("banned_phrases", "bold_allowed_patterns"):
+        if key in style and not (isinstance(style[key], list) and all(isinstance(v, str) for v in style[key])):
+            raise UsageError(f"{where}: {key} must be a list of text")
+    for pattern in style.get("bold_allowed_patterns", []):
+        if len(pattern) > MAX_PATTERN_LENGTH:
+            raise UsageError(f"{where}: a bold pattern is longer than {MAX_PATTERN_LENGTH} characters")
+        try:
+            re.compile(pattern)
+        except re.error as err:
+            raise UsageError(f"{where}: bold pattern {pattern!r} is not a valid regex ({err})") from None
+    return style
+
+
+def load_preset(name: str, styles_dir: Path) -> dict:
+    preset = validate_style(_load_json(styles_dir / f"{name}.json", f"{name} style"), f"{name} style")
+    if "preset" in preset:
+        raise UsageError(f"the {name} style can't name another preset")
+    return preset
+
+
+def merge_style(base: dict, style: dict, styles_dir: Path, where: str = "style") -> dict:
+    """The rules with a style applied. Registers merge key by key; banned phrases
+    and bold patterns are only added; contractions and hyphen limits are replaced.
+    A "preset" is applied first, then the style's own keys on top."""
+    validate_style(style, where)
+    rules = json.loads(json.dumps(base))
+    layers = []
+    if style.get("preset"):
+        layers.append(load_preset(style["preset"], Path(styles_dir)))
+    layers.append(style)
+    for layer in layers:
+        for name, register in (layer.get("registers") or {}).items():
+            rules.setdefault("registers", {}).setdefault(name, {}).update(register)
+        for key in ("max_spaced_hyphens", "min_contractions"):
+            if key in layer:
+                rules[key] = layer[key]
+        for key in ("banned_phrases", "bold_allowed_patterns"):
+            if key in layer:
+                current = list(rules.get(key, []))
+                rules[key] = current + [v for v in layer[key] if v not in current]
+    return rules
+
+
 def load_claims(path: str | Path) -> list[dict]:
     claims = _load_json(path, "claims")
     if not isinstance(claims, list):
@@ -138,9 +223,9 @@ def html_to_text(markup: str) -> str:
 def check_dashes(text: str, config: dict) -> Iterable[Finding]:
     if "—" in text or "–" in text:
         yield Finding("dashes", FAIL, "contains an em dash or en dash")
-    limit = config.get("max_spaced_hyphens", 1)
+    limit = config.get("max_spaced_hyphens")  # absent: no limit (style, not truth)
     count = text.count(" - ")
-    if count > limit:
+    if limit is not None and count > limit:
         yield Finding(
             "dashes", FAIL, f"{count} spaced hyphens, the limit is {limit}"
         )
@@ -180,7 +265,9 @@ def check_banned_phrases(text: str, config: dict) -> Iterable[Finding]:
 
 
 def check_bold(text: str, config: dict) -> Iterable[Finding]:
-    patterns = [re.compile(p) for p in config.get("bold_allowed_patterns", [])]
+    if "bold_allowed_patterns" not in config:
+        return  # absent: no bold rule. An empty list still means "no bold at all".
+    patterns = [re.compile(p) for p in config["bold_allowed_patterns"]]
     for span in BOLD_RE.findall(text):
         if not any(p.fullmatch(span) for p in patterns):
             yield Finding("bold", FAIL, f"bold text {span!r} is not on the allow list")
@@ -336,8 +423,11 @@ def passed(findings: Iterable[Finding]) -> bool:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check an outbound email draft.")
     parser.add_argument("draft", help="path to the draft text file")
-    parser.add_argument("--config", required=True, help="path to the gate config JSON")
-    parser.add_argument("--register", required=True, help="register name from the config")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--config", help="path to a full rules JSON (for example demo/rules.json)")
+    source.add_argument("--project", help="a project folder: the same rules the gate uses there "
+                        "(plugin truth rules, the project's .gates/style.json, your own facts)")
+    parser.add_argument("--register", help="register name (default: the project's register; needed with --config)")
     parser.add_argument("--claims", help="path to the claims JSON for this draft")
     parser.add_argument(
         "--today",
@@ -350,7 +440,15 @@ def main(argv: list[str] | None = None) -> int:
             text = Path(args.draft).read_text(encoding="utf-8")
         except FileNotFoundError:
             raise UsageError(f"draft file not found: {args.draft}") from None
-        config = load_config(args.config)
+        if args.project:
+            from .evidence import load_settings  # evidence imports this module, so import late
+
+            settings = load_settings(Path(__file__).resolve().parents[1], Path(args.project))
+            config, register = settings["rules"], args.register or settings["register"]
+        else:
+            if not args.register:
+                raise UsageError("--register is needed with --config")
+            config, register = load_config(args.config), args.register
         claims = load_claims(args.claims) if args.claims else None
         try:
             today = (
@@ -358,7 +456,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         except ValueError:
             raise UsageError(f"--today must be YYYY-MM-DD, got {args.today!r}") from None
-        findings = check(text, config, args.register, claims, today)
+        findings = check(text, config, register, claims, today)
     except UsageError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2

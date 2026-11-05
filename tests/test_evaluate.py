@@ -9,6 +9,8 @@ import pytest
 from gates import evidence
 from gates.evaluate import Draft, evaluate
 
+from conftest import demo_user_config
+
 ROOT = Path(__file__).resolve().parents[1]
 TODAY = date(2026, 11, 3)
 CONTACT = "dana@northwind-audio.example"
@@ -25,11 +27,12 @@ def project(tmp_path):
     shutil.copytree(ROOT / "demo" / "pages", proj / "demo" / "pages")
     shutil.copy(ROOT / "demo" / "gate_crm.json", proj / "demo" / "gate_crm.json")
     shutil.copy(ROOT / "demo" / "gate" / "config.json", proj / ".gates" / "config.json")
+    demo_user_config(proj / ".config" / "outbound-gates" / "config.json")
     return proj
 
 
 def settings_for(proj):
-    return evidence.load_settings(ROOT, proj, user_config=proj / "no-user-config.json")
+    return evidence.load_settings(ROOT, proj, user_config=proj / ".config" / "outbound-gates" / "config.json")
 
 
 def record_price(proj):

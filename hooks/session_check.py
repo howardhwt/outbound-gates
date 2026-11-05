@@ -136,7 +136,7 @@ def watchdog(payload: dict, env: dict, home: Path) -> str:
         if not ok:
             problems.append(reason)
     if not problems:
-        notes = [n for n in [stale_copy(project, home)] + net_warnings(project, home) if n]
+        notes = [n for n in [stale_copy(project, home)] + net_warnings(project, home) + style_notes(project) if n]
         return json.dumps({"systemMessage": " | ".join(notes)}) if notes else ""
     why = "; ".join(problems)
     return json.dumps({
@@ -218,6 +218,28 @@ def uninstalled_note(project: Path) -> str:
         return (f"send gate: the safety net was uninstalled for this project on {str(last.get('ts', ''))[:10]} "
                 "(setup.log). Run setup again to restore it.")
     return ""
+
+
+def style_notes(project: Path) -> list[str]:
+    """For the person: which style the gate uses here, and whether it changed since setup.
+
+    Style is how the email reads (length, sign-off, closing line), not what it may
+    claim, so a change is a notice rather than a warning; the person decides.
+    """
+    path = project / ".gates" / "style.json"
+    if not path.is_file():
+        return ["send gate: this project has no .gates/style.json, so the example style applies "
+                "(80-150 word cold emails, a fixed sign-off and closing line). "
+                "Run setup with --style neutral|example|FILE to choose one."]
+    try:
+        entry = (_read_json(CONFIG_DIR / "installed.json").get("projects") or {}).get(str(project.resolve())) or {}
+    except (OSError, RuntimeError):
+        entry = {}
+    recorded = entry.get("style_sha256")
+    if recorded and _sha_file(path) != recorded:
+        return [f"send gate: {path} changed since setup recorded it. If you made the change, run setup "
+                "again to record it; if you didn't, check it (style sets length, sign-off and banned phrases)."]
+    return []
 
 
 def net_warnings(project: Path, home: Path) -> list[str]:

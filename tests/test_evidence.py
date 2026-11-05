@@ -238,12 +238,12 @@ def test_record_command_has_no_domain_flag():
 
 # --- own facts from the user's config ---
 
-def test_user_own_facts_are_added_to_the_plugin_list(tmp_path):
+def test_own_facts_come_only_from_the_user_config(tmp_path):
     project = tmp_path / "proj"
     (project / ".gates").mkdir(parents=True)
     user = write(tmp_path / "user.json", {"own_facts": ["$0.01", "1"]})
     facts = evidence.load_settings(ROOT, project, user_config=user)["rules"]["own_facts"]
-    assert "$0.002" in facts and "$0.01" in facts and "1" in facts
+    assert sorted(facts) == ["$0.01", "1"]  # the plugin ships none; the demo price is not a default
 
 
 def test_project_cannot_add_own_facts(tmp_path):

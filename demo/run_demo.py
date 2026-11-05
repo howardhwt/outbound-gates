@@ -26,7 +26,7 @@ from gates.presend import find_company, load_crm, presend_check
 from .report import build_report
 
 ROOT = Path(__file__).resolve().parent
-CONFIG = ROOT.parent / "gates" / "config.example.json"
+CONFIG = ROOT.parent / "demo" / "rules.json"
 
 
 def note(company: dict, today: str, text: str, **extra) -> None:
