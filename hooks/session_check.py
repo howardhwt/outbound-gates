@@ -34,6 +34,8 @@ from pathlib import Path
 PLUGIN_ID = "outbound-gates@outbound-gates"
 VERSION = "dev"  # setup stamps the plugin version into the copy
 NET_DIR = Path(__file__).resolve().parent
+# Where setup keeps the manifest and log; the plugin's own copy of this file reads them here too.
+CONFIG_DIR = Path.home() / ".config" / "outbound-gates"
 # Used when blocked.json is missing. setup writes the full list from gates/hook.config.json.
 DEFAULT_SEND_NAMES = ["send_message", "send_email", "send_mail", "reply", "forward",
                       "schedule_message", "send_now"]
@@ -134,8 +136,8 @@ def watchdog(payload: dict, env: dict, home: Path) -> str:
         if not ok:
             problems.append(reason)
     if not problems:
-        stale = stale_copy(project, home)
-        return json.dumps({"systemMessage": stale}) if stale else ""
+        notes = [n for n in [stale_copy(project, home)] + net_warnings(project, home) if n]
+        return json.dumps({"systemMessage": " | ".join(notes)}) if notes else ""
     why = "; ".join(problems)
     return json.dumps({
         "systemMessage": (
@@ -152,6 +154,79 @@ def watchdog(payload: dict, env: dict, home: Path) -> str:
             ),
         },
     })
+
+
+def _sha_file(path: Path) -> str | None:
+    import hashlib
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def tamper_findings(project: Path, home: Path) -> list[str]:
+    """What setup installed that is now missing or changed (the manifest is the record).
+
+    Detect-only: an agent that edits installed.json along with the files is not caught.
+    """
+    manifest = _read_json(CONFIG_DIR / "installed.json")
+    if not manifest:
+        return []
+    found = []
+    for name, sha in (manifest.get("files") or {}).items():
+        now = _sha_file(CONFIG_DIR / name)
+        if now is None:
+            found.append(f"{name} is missing from {CONFIG_DIR}")
+        elif now != sha:
+            found.append(f"{name} in {CONFIG_DIR} was changed after setup")
+    hooks = _read_json(home / ".claude" / "settings.json").get("hooks") or {}
+    commands = [str(h.get("command", "")) for groups in hooks.values() if isinstance(groups, list)
+                for g in groups if isinstance(g, dict) for h in g.get("hooks") or [] if isinstance(h, dict)]
+    wrapper = str(CONFIG_DIR.resolve() / "gate-net.sh") if CONFIG_DIR.exists() else str(CONFIG_DIR / "gate-net.sh")
+    if manifest.get("user_hooks"):
+        for mode in ("watchdog", "draft-guard"):
+            if not any(wrapper in c and mode in c for c in commands):
+                found.append(f"the {mode} hook was removed from {home / '.claude' / 'settings.json'}")
+    try:
+        entry = (manifest.get("projects") or {}).get(str(project.resolve()))
+    except (OSError, RuntimeError):
+        entry = None
+    if entry:
+        deny = (_read_json(project / ".claude" / "settings.local.json").get("permissions") or {}).get("deny") or []
+        missing = [n for n in entry.get("deny_rules") or [] if n not in deny]
+        if missing:
+            found.append(f"{len(missing)} deny rules were removed from {project / '.claude' / 'settings.local.json'}")
+    return found
+
+
+def uninstalled_note(project: Path) -> str:
+    """'uninstalled on <date>' when setup.log's last word on this project is an uninstall."""
+    try:
+        key = str(project.resolve())
+        lines = (CONFIG_DIR / "setup.log").read_text(encoding="utf-8").splitlines()
+    except (OSError, RuntimeError):
+        return ""
+    last = None
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and entry.get("project") == key:
+            last = entry
+    if last and last.get("action") == "uninstall":
+        return (f"send gate: the safety net was uninstalled for this project on {str(last.get('ts', ''))[:10]} "
+                "(setup.log). Run setup again to restore it.")
+    return ""
+
+
+def net_warnings(project: Path, home: Path) -> list[str]:
+    """Session-start warnings about the safety net itself."""
+    warnings = [f"WARNING send gate safety net changed: {f}" for f in tamper_findings(project, home)]
+    note = uninstalled_note(project)
+    if note:
+        warnings.append(note)
+    return warnings
 
 
 def stale_copy(project: Path, home: Path) -> str:
@@ -491,6 +566,12 @@ def plugin(payload: dict, env: dict, now: datetime | None = None) -> str:
     except OSError as err:
         print(f"send gate: could not write the session log: {err}", file=sys.stderr)
     message = "send gate: on. Gmail drafts are checked; send, reply and forward are blocked."
+    try:
+        extra = net_warnings(project, Path.home()) if (project / ".gates").is_dir() else []
+    except Exception:  # never block a session start
+        extra = []
+    if extra:
+        message = message + " " + " | ".join(extra)
     return json.dumps({
         "systemMessage": message,  # shown to the user in the terminal
         "hookSpecificOutput": {  # added to the agent's context, so it can confirm the gate too

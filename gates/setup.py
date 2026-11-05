@@ -13,21 +13,27 @@ layers that hold when it isn't:
 
 A person runs it, in two steps (the agent may run only the first):
 
-  python3 <plugin>/gates/setup.py --project DIR --plugin-root <plugin>          # preview
-  python3 <plugin>/gates/setup.py --project DIR --plugin-root <plugin> --yes    # apply
-  python3 ~/.config/outbound-gates/setup.py --project DIR --uninstall [--all] [--yes]
+  python3 <plugin>/gates/setup.py --project DIR --plugin-root <plugin>               # preview
+  python3 <plugin>/gates/setup.py --project DIR --plugin-root <plugin> --yes HASH     # apply
+  python3 ~/.config/outbound-gates/setup.py --project DIR --uninstall [--all] [--yes HASH]
+
+The preview prints a PLANHASH; --yes needs it and refuses (exit 3) if the plan
+changed since. Optional at install: --strict/--no-strict, --check-names FILE
+(advisory), and a guided first run: --crm-source file|hubspot, --crm-path,
+--sender-owner. Every applied run appends a line to setup.log.
 
 Uninstall runs from the copy, so it works after the plugin is removed. Setup
 only changes entries it adds; everything else in each settings file is re-read
 just before writing and kept. Each changed settings file gets a backup.
 
 Standalone and stdlib only (it is copied out of the plugin), so it does not
-import the gates package. Exit codes: 0 done, 1 refused or selftest failed,
-2 bad input.
+import the gates package. Exit codes: 0 done, 1 refused, selftest failed or the
+first-run config step was skipped, 2 bad input, 3 plan changed since preview.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -49,6 +55,59 @@ DRAFT_NAMES = ["create_draft", "update_draft"]
 
 class SetupError(Exception):
     """Bad input or a file setup must not touch. Nothing has been written."""
+
+
+class Refused(Exception):
+    """Setup can't go ahead (another run holds the lock). Exit 1."""
+
+
+class PlanChanged(Exception):
+    """The plan differs from the preview the person approved. Exit 3."""
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def plan_hash(payload: dict) -> str:
+    return _sha(json.dumps(payload, sort_keys=True, default=str).encode("utf-8"))[:12]
+
+
+class Lock:
+    """One setup run at a time: an O_EXCL lock file holding our pid; a dead owner's lock is taken over."""
+
+    def __init__(self, net_dir: Path):
+        self.path = net_dir / ".lock"
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        for _ in range(2):
+            try:
+                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.write(fd, str(os.getpid()).encode())
+                os.close(fd)
+                return self
+            except FileExistsError:
+                try:
+                    owner = int(self.path.read_text().strip() or "0")
+                    os.kill(owner, 0)
+                except (ValueError, ProcessLookupError, OSError):
+                    self.path.unlink(missing_ok=True)  # stale lock
+                    continue
+                raise Refused(f"another setup run (pid {owner}) holds {self.path}; wait for it, "
+                              "or delete the file if that run is gone") from None
+        raise Refused(f"could not take {self.path}")
+
+    def __exit__(self, *exc):
+        self.path.unlink(missing_ok=True)
+
+
+def append_log(net_dir: Path, entry: dict) -> None:
+    net_dir.mkdir(parents=True, exist_ok=True)
+    line = json.dumps({"schema": SCHEMA, "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                       **entry}, sort_keys=True)
+    with open(net_dir / "setup.log", "a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
 
 
 # --- names -------------------------------------------------------------------
@@ -246,8 +305,82 @@ def _user_scope_warning(home: Path) -> str | None:
     return None
 
 
+def _copies(plugin_root: Path, version: str, names: dict) -> dict:
+    source = (plugin_root / "hooks" / "session_check.py").read_text(encoding="utf-8")
+    stamped, count = re.subn(r'^VERSION = "dev".*$', f'VERSION = "{version}"', source, count=1, flags=re.M)
+    if count != 1:
+        raise SetupError("hooks/session_check.py has no VERSION line to stamp")
+    blocked = {"schema": SCHEMA, "version": version, **names}
+    return {"session_check.py": stamped.encode("utf-8"),
+            "gate-net.sh": (plugin_root / "hooks" / "gate-net.sh").read_bytes(),
+            "setup.py": Path(__file__).read_bytes(),
+            "blocked.json": (json.dumps(blocked, indent=2) + "\n").encode("utf-8")}
+
+
+def plan_config(project: Path, home: Path, crm_source: str | None, crm_path: str | None,
+                sender_owner: str | None) -> dict:
+    """Guided first run: what to add to .gates/config.json, or why the step is skipped."""
+    if not crm_source:
+        if crm_path or sender_owner:
+            return {"add": {}, "error": "--crm-path and --sender-owner need --crm-source"}
+        return {"add": {}, "error": None}
+    wanted = {"crm_source": crm_source}
+    problems = []
+    if crm_source == "file":
+        if not crm_path:
+            problems.append("file mode needs --crm-path")
+        else:
+            target = Path(crm_path).expanduser()
+            target = target if target.is_absolute() else project / target
+            if not target.is_file():
+                problems.append(f"CRM file not found: {target}")
+            wanted["crm_path"] = crm_path
+    else:  # hubspot
+        if not sender_owner:
+            problems.append("HubSpot mode needs --sender-owner (your HubSpot owner id)")
+        key = home / ".config" / "outbound-gates" / "hubspot.key"
+        if not key.is_file():
+            problems.append(f"no HubSpot key at {key}: save a read-only Service Key there, then chmod 600 {key}")
+        else:
+            lines = key.read_text(encoding="utf-8").splitlines()
+            if len(lines) != 1 or not lines[0] or re.search(r"\s", lines[0]):
+                problems.append(f"{key} must hold exactly one token on one line (it is never printed)")
+            if os.stat(key).st_mode & 0o077:
+                problems.append(f"{key} is readable by others: run chmod 600 {key}")
+    if sender_owner:
+        wanted["sender_owner"] = sender_owner
+    current = read_settings(project / ".gates" / "config.json")
+    conflicts = [f"{k} is already {current[k]!r}" for k, v in wanted.items() if k in current and current[k] != v]
+    if conflicts:
+        problems.append("existing .gates/config.json differs (" + "; ".join(conflicts) + "); edit it by hand")
+    add = {k: v for k, v in wanted.items() if k not in current}
+    return {"add": add if not problems else {}, "error": "; ".join(problems) or None}
+
+
+def check_names(names_file: str | None, deny_rules: list[str], project: Path, home: Path) -> list[str]:
+    """Advisory: does each deny rule name a tool the agent listed, one already denied, or neither?"""
+    if not names_file:
+        return []
+    try:
+        loaded = {line.strip() for line in Path(names_file).read_text(encoding="utf-8").splitlines() if line.strip()}
+    except OSError as err:
+        raise SetupError(f"cannot read --check-names file: {err}") from None
+    denied = set()
+    for path in (home / ".claude" / "settings.json", project / ".claude" / "settings.json",
+                 project / ".claude" / "settings.local.json"):
+        denied |= set((read_settings(path).get("permissions") or {}).get("deny") or [])
+    lines = ["Name check (advisory: the agent supplied the tool list):"]
+    for rule in deny_rules:
+        state = ("matches a loaded tool" if rule in loaded else
+                 "already denied (hidden from the agent, so it can't be listed)" if rule in denied else
+                 "possibly dead: no loaded tool has this name")
+        lines.append(f"    {rule}: {state}")
+    return lines
+
+
 def plan_install(project: Path, home: Path, plugin_root: Path, managed: list[Path] | None = None,
-                 strict: bool | None = None) -> dict:
+                 strict: bool | None = None, config: dict | None = None,
+                 names_file: str | None = None) -> dict:
     names = load_names(plugin_root)
     net_dir = home.resolve() / ".config" / "outbound-gates"
     user_path = home / ".claude" / "settings.json"
@@ -271,10 +404,19 @@ def plan_install(project: Path, home: Path, plugin_root: Path, managed: list[Pat
         strict = bool((projects.get(str(project)) or {}).get("strict"))
     others_strict = any((v or {}).get("strict") for k, v in projects.items() if k != str(project))
     warnings += [w for w in (_gitignore_warning(project), _user_scope_warning(home)) if w]
-    return {"project": project, "home": home, "plugin_root": plugin_root, "net_dir": net_dir,
-            "version": plugin_version(plugin_root), "names": names, "deny_new": deny_new,
+    version = plugin_version(plugin_root)
+    copies = _copies(plugin_root, version, names)
+    config = config or {"add": {}, "error": None}
+    plan = {"project": project, "home": home, "plugin_root": plugin_root, "net_dir": net_dir,
+            "version": version, "names": names, "deny_new": deny_new,
             "legacy": legacy, "warnings": warnings, "user_path": user_path, "local_path": local_path,
-            "strict": strict, "any_strict": strict or others_strict}
+            "strict": strict, "any_strict": strict or others_strict, "copies": copies, "config": config,
+            "name_check": check_names(names_file, names["deny_rules"], project, home)}
+    plan["hash"] = plan_hash({"action": "install", "project": str(project), "version": version,
+                              "deny_new": deny_new, "legacy": legacy, "strict": strict,
+                              "matchers": guard_matchers(names["matcher"], plan["any_strict"]),
+                              "copies": {k: _sha(v) for k, v in copies.items()}, "config": config["add"]})
+    return plan
 
 
 def describe_install(plan: dict) -> list[str]:
@@ -297,7 +439,14 @@ def describe_install(plan: dict) -> list[str]:
         lines.append(f"  {plan['local_path']}: deny rules already present")
     if not (plan["project"] / ".gates").is_dir():
         lines.append(f"  create {plan['project'] / '.gates'}")
+    if plan["config"]["add"]:
+        lines.append(f"  {plan['project'] / '.gates' / 'config.json'}: add " +
+                     ", ".join(f"{k}={v!r}" for k, v in plan["config"]["add"].items()))
+    if plan["config"]["error"]:
+        lines.append(f"  first-run config step skipped: {plan['config']['error']}")
     lines += [f"  warning: {w}" for w in plan["warnings"]]
+    lines += plan["name_check"]
+    lines.append(f"PLANHASH {plan['hash']}")
     return lines
 
 
@@ -305,15 +454,8 @@ def apply_install(plan: dict, stamp: str) -> list[str]:
     net, root = plan["net_dir"], plan["plugin_root"]
     net.mkdir(parents=True, exist_ok=True)
     os.chmod(net, 0o700)
-    source = (root / "hooks" / "session_check.py").read_text(encoding="utf-8")
-    stamped, count = re.subn(r'^VERSION = "dev".*$', f'VERSION = "{plan["version"]}"', source, count=1, flags=re.M)
-    if count != 1:
-        raise SetupError("hooks/session_check.py has no VERSION line to stamp")
-    atomic_write(net / "session_check.py", stamped.encode("utf-8"), 0o600)
-    atomic_write(net / "gate-net.sh", (root / "hooks" / "gate-net.sh").read_bytes(), 0o700)
-    atomic_write(net / "setup.py", Path(__file__).read_bytes(), 0o600)
-    blocked = {"schema": SCHEMA, "version": plan["version"], **plan["names"]}
-    atomic_write(net / "blocked.json", (json.dumps(blocked, indent=2) + "\n").encode("utf-8"), 0o600)
+    for name, data in plan["copies"].items():
+        atomic_write(net / name, data, 0o700 if name == "gate-net.sh" else 0o600)
 
     changed = []
     matchers = guard_matchers(plan["names"]["matcher"], plan["any_strict"])
@@ -322,16 +464,26 @@ def apply_install(plan: dict, stamp: str) -> list[str]:
     if write_settings(plan["local_path"], lambda s: add_deny(s, plan["names"]["deny_rules"]), stamp):
         changed.append(str(plan["local_path"]))
     (plan["project"] / ".gates").mkdir(exist_ok=True)
+    if plan["config"]["add"]:
+        config_path = plan["project"] / ".gates" / "config.json"
+        merged = {**read_settings(config_path), **plan["config"]["add"]}
+        atomic_write(config_path, (json.dumps(merged, indent=2) + "\n").encode("utf-8"))
+        changed.append(str(config_path))
 
     manifest_path = net / "installed.json"
     manifest = read_settings(manifest_path) or {"schema": SCHEMA, "projects": {}}
     entry = manifest.setdefault("projects", {}).setdefault(str(plan["project"]), {"deny_added": []})
     entry["deny_added"] += [n for n in plan["deny_new"] if n not in entry["deny_added"]]
     entry["strict"] = bool(plan["strict"])
+    entry["deny_rules"] = list(plan["names"]["deny_rules"])
     if plan["strict"] and not (net / "allow.json").exists():
         atomic_write(net / "allow.json", (json.dumps({"schema": SCHEMA, "allow": []}, indent=2) + "\n").encode(), 0o600)
-    manifest.update({"schema": SCHEMA, "version": plan["version"], "user_hooks": True})
+    manifest.update({"schema": SCHEMA, "version": plan["version"], "user_hooks": True,
+                     "files": {k: _sha(v) for k, v in plan["copies"].items()},
+                     "matchers": guard_matchers(plan["names"]["matcher"], plan["any_strict"])})
     atomic_write(manifest_path, (json.dumps(manifest, indent=2) + "\n").encode("utf-8"), 0o600)
+    append_log(net, {"action": "install", "project": str(plan["project"]), "version": plan["version"],
+                     "planhash": plan["hash"], "strict": bool(plan["strict"])})
     return changed
 
 
@@ -341,8 +493,11 @@ def plan_uninstall(project: Path, home: Path, remove_all: bool) -> dict:
     projects = manifest.get("projects") or {}
     targets = list(projects) if remove_all else [p for p in projects if p == str(project)]
     remaining = [p for p in projects if p not in targets]
-    return {"home": home, "net_dir": net, "manifest": manifest, "targets": targets,
+    plan = {"home": home, "net_dir": net, "manifest": manifest, "targets": targets,
             "user_too": bool(manifest) and not remaining, "user_path": home / ".claude" / "settings.json"}
+    plan["hash"] = plan_hash({"action": "uninstall", "targets": targets, "user_too": plan["user_too"],
+                              "deny": {t: projects[t].get("deny_added") for t in targets}})
+    return plan
 
 
 def describe_uninstall(plan: dict) -> list[str]:
@@ -359,6 +514,7 @@ def describe_uninstall(plan: dict) -> list[str]:
         lines.append(f"  delete {', '.join(NET_FILES + ('installed.json',))} from {plan['net_dir']}")
     else:
         lines.append("  user-level hooks stay: other projects still use them (use --all to remove everything)")
+    lines.append(f"PLANHASH {plan['hash']}")
     return lines
 
 
@@ -379,10 +535,25 @@ def apply_uninstall(plan: dict, stamp: str) -> list[str]:
             (net / name).unlink(missing_ok=True)
     elif manifest:
         atomic_write(net / "installed.json", (json.dumps(manifest, indent=2) + "\n").encode("utf-8"), 0o600)
+    for project in plan["targets"]:
+        append_log(net, {"action": "uninstall", "project": project, "planhash": plan["hash"],
+                         "all": bool(plan["user_too"])})
     return changed
 
 
 # --- command line --------------------------------------------------------------
+
+def _confirm(given: str | None, plan: dict) -> bool:
+    """None: preview only. A hash: apply if it matches. Empty: refuse (bad input)."""
+    if given is None:
+        return False
+    if not given:
+        raise SetupError("--yes needs the PLANHASH printed by the preview")
+    if given != plan["hash"]:
+        raise PlanChanged(f"the plan changed since the preview (PLANHASH {given} is now {plan['hash']}); "
+                          "run the preview again and review it")
+    return True
+
 
 def main(argv: list[str] | None = None, home: Path | None = None, managed: list[Path] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install or remove the outbound-gates safety net.")
@@ -390,26 +561,36 @@ def main(argv: list[str] | None = None, home: Path | None = None, managed: list[
     parser.add_argument("--plugin-root", help="the installed plugin folder (needed to install)")
     parser.add_argument("--uninstall", action="store_true", help="remove what setup added for this project")
     parser.add_argument("--all", action="store_true", help="with --uninstall: every project and the user-level hooks")
-    parser.add_argument("--yes", action="store_true", help="apply the plan (without it, only print it)")
+    parser.add_argument("--yes", nargs="?", const="", metavar="PLANHASH",
+                        help="apply the plan; needs the PLANHASH printed by the preview")
     parser.add_argument("--strict", action="store_true",
                         help="strict mode for this project: allow-list for MCP tools, Bash and file-edit guard")
     parser.add_argument("--no-strict", action="store_true", help="turn strict mode off for this project")
+    parser.add_argument("--check-names", metavar="FILE",
+                        help="preview only: compare deny rules with the tool names in FILE (advisory)")
+    parser.add_argument("--crm-source", choices=["file", "hubspot"], help="first run: where the gate reads the CRM")
+    parser.add_argument("--crm-path", help="first run, file mode: the CRM export")
+    parser.add_argument("--sender-owner", help="first run: your HubSpot owner id")
     args = parser.parse_args(argv)
     home = home or Path.home()
     project = Path(args.project).expanduser().resolve()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    net_dir = home.resolve() / ".config" / "outbound-gates"
     try:
         if args.uninstall:
             plan = plan_uninstall(project, home, args.all)
             print("\n".join(describe_uninstall(plan)))
             if not plan["manifest"]:
                 return 0
-            if not args.yes:
+            if not _confirm(args.yes, plan):
                 print(f"\nTo apply, run: python3 \"{plan['net_dir'] / 'setup.py'}\" --project \"{project}\" --uninstall"
-                      + (" --all" if args.all else "") + " --yes")
+                      + (" --all" if args.all else "") + f" --yes {plan['hash']}")
                 return 0
-            for path in apply_uninstall(plan, stamp):
-                print(f"changed {path} (backup kept next to it)")
+            with Lock(net_dir):
+                plan = plan_uninstall(project, home, args.all)
+                _confirm(args.yes, plan)
+                for path in apply_uninstall(plan, stamp):
+                    print(f"changed {path} (backup kept next to it)")
             print("Uninstalled. Start a new session for Claude Code to drop the hooks.")
             return 0
 
@@ -420,25 +601,47 @@ def main(argv: list[str] | None = None, home: Path | None = None, managed: list[
             raise SetupError(f"project folder not found: {project}")
         if args.strict and args.no_strict:
             raise SetupError("use --strict or --no-strict, not both")
+        if args.check_names and args.yes is not None:
+            raise SetupError("--check-names is for the preview only")
         mode = True if args.strict else False if args.no_strict else None
-        plan = plan_install(project, home, plugin_root, managed, mode)
+
+        def build():
+            config = plan_config(project, home, args.crm_source, args.crm_path, args.sender_owner)
+            return plan_install(project, home, plugin_root, managed, mode, config, args.check_names)
+
+        plan = build()
         print("\n".join(describe_install(plan)))
-        if not args.yes:
+        if not _confirm(args.yes, plan):
+            extra = (" --strict" if args.strict else " --no-strict" if args.no_strict else "")
+            for flag, value in (("--crm-source", args.crm_source), ("--crm-path", args.crm_path),
+                                ("--sender-owner", args.sender_owner)):
+                if value:
+                    extra += f' {flag} "{value}"'
             print(f"\nTo apply, run: python3 \"{plugin_root / 'gates' / 'setup.py'}\" --project \"{project}\" "
-                  f"--plugin-root \"{plugin_root}\"" + (" --strict" if args.strict else " --no-strict" if args.no_strict else "")
-                  + " --yes")
+                  f"--plugin-root \"{plugin_root}\"{extra} --yes {plan['hash']}")
             return 0
-        for path in apply_install(plan, stamp):
-            print(f"changed {path} (backup kept next to it)")
+        with Lock(net_dir):
+            plan = build()  # re-read everything under the lock; the hash must still match
+            _confirm(args.yes, plan)
+            for path in apply_install(plan, stamp):
+                print(f"changed {path} (backup kept next to it)")
     except SetupError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
+    except Refused as err:
+        print(f"refused: {err}", file=sys.stderr)
+        return 1
+    except PlanChanged as err:
+        print(f"plan changed: {err}", file=sys.stderr)
+        return 3
 
     test = subprocess.run([sys.executable, str(plan["net_dir"] / "session_check.py"), "selftest", str(project)],
                           capture_output=True, text=True, env={**os.environ, "HOME": str(home)})
     print(test.stdout, end="")
+    if plan["config"]["error"]:
+        print(f"First-run config step was skipped: {plan['config']['error']}")
     print("Start a new Claude Code session in this folder for the hooks to take effect.")
-    return 0 if test.returncode == 0 else 1
+    return 0 if test.returncode == 0 and not plan["config"]["error"] else 1
 
 
 if __name__ == "__main__":
