@@ -77,7 +77,7 @@ def load_config(path: str | Path) -> dict:
 
 STYLE_KEYS = {"registers", "max_spaced_hyphens", "min_contractions", "banned_phrases",
               "bold_allowed_patterns"}
-REGISTER_KEYS = {"words", "sign_off", "required_close"}
+REGISTER_KEYS = {"words", "sign_off", "required_close", "max_spaced_hyphens"}
 PRESETS = {"example"}
 MAX_PATTERN_LENGTH = 200
 
@@ -104,6 +104,9 @@ def validate_style(style, where: str = "style") -> dict:
         if words is not None and not (isinstance(words, list) and len(words) == 2
                                       and all(isinstance(w, int) and w >= 0 for w in words) and words[0] <= words[1]):
             raise UsageError(f"{where}: register {name!r} words must be [low, high] with 0 <= low <= high")
+        limit = register.get("max_spaced_hyphens")
+        if limit is not None and not (isinstance(limit, int) and not isinstance(limit, bool) and limit >= 0):
+            raise UsageError(f"{where}: register {name!r} max_spaced_hyphens must be a whole number, 0 or more")
         for text_key in ("sign_off", "required_close"):
             if text_key in register and not isinstance(register[text_key], str):
                 raise UsageError(f"{where}: register {name!r} {text_key} must be text")
@@ -220,10 +223,12 @@ def html_to_text(markup: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
-def check_dashes(text: str, config: dict) -> Iterable[Finding]:
+def check_dashes(text: str, config: dict, register: str | None = None) -> Iterable[Finding]:
     if "—" in text or "–" in text:
         yield Finding("dashes", FAIL, "contains an em dash or en dash")
     limit = config.get("max_spaced_hyphens")  # absent: no limit (style, not truth)
+    if register is not None:  # a register's own limit wins
+        limit = (config.get("registers", {}).get(register) or {}).get("max_spaced_hyphens", limit)
     count = text.count(" - ")
     if limit is not None and count > limit:
         yield Finding(
@@ -404,7 +409,7 @@ def check(
         raise UsageError(f"unknown register {register!r}. The config defines: {known}")
     text = normalise_text(text)
     findings: list[Finding] = []
-    findings += check_dashes(text, config)
+    findings += check_dashes(text, config, register)
     findings += check_length(text, config, register)
     findings += check_sign_off(text, config, register)
     findings += check_required_close(text, config, register)

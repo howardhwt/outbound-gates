@@ -131,8 +131,8 @@ The rules come in two kinds.
 
 | Style key | What it sets | How it combines |
 |---|---|---|
-| `registers` | Per register (`cold`, `follow_up`, or a new one): `words` `[low, high]`, `sign_off`, `required_close` | Merged key by key over the defaults |
-| `max_spaced_hyphens` | The most ` - ` a draft may use | Replaces; absent means no limit |
+| `registers` | Per register (`cold`, `follow_up`, or a new one): `words` `[low, high]`, `sign_off`, `required_close`, and its own `max_spaced_hyphens` | Merged key by key over the defaults |
+| `max_spaced_hyphens` | The most ` - ` a draft may use, unless its register sets its own | Replaces; absent means no limit |
 | `min_contractions` | Fewer contractions than this is a warning | Replaces |
 | `banned_phrases` | Extra phrases to block | Only adds |
 | `bold_allowed_patterns` | Regexes bold text must match | Only adds; absent means bold is allowed |

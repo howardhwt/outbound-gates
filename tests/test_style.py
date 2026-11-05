@@ -178,3 +178,32 @@ def test_readme_style_table_lists_every_style_key():
     readme = (ROOT / "README.md").read_text()
     table = readme.split("| Style key |", 1)[1].split("\n\n", 1)[0]
     assert set(re.findall(r"^\| `(\w+)` \|", table, re.M)) == checker.STYLE_KEYS
+
+
+# --- per-register hyphen limit and the follow-up register --------------------------
+
+def test_register_hyphen_limit_wins_over_the_global_one():
+    rules = merged({"max_spaced_hyphens": 0, "registers": {"follow_up": {"max_spaced_hyphens": 1}}})
+    text = "Let me know - no worries."
+    assert list(checker.check_dashes(text, rules, "cold"))
+    assert list(checker.check_dashes(text, rules, "follow_up")) == []
+
+
+@pytest.mark.parametrize("bad", [-1, True, 1.5])
+def test_register_hyphen_limit_is_a_whole_number(bad):
+    with pytest.raises(UsageError, match="max_spaced_hyphens"):
+        checker.validate_style({"registers": {"cold": {"max_spaced_hyphens": bad}}})
+
+
+@pytest.mark.parametrize("subject,register", [
+    ("Re: pricing", "follow_up"), ("RE : pricing", "follow_up"), ("  re:pricing", "follow_up"),
+    ("Regarding pricing", "cold"), ("Pricing, re: your page", "cold"), ("", "cold"),
+])
+def test_reply_subjects_get_the_follow_up_register(subject, register):
+    from gates.evaluate import register_for
+    assert register_for(subject, NEUTRAL, "cold") == register
+
+
+def test_no_follow_up_register_keeps_the_default():
+    from gates.evaluate import register_for
+    assert register_for("Re: x", {"registers": {"cold": {}}}, "cold") == "cold"

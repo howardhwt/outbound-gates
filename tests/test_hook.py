@@ -258,3 +258,59 @@ def test_wrapper_turns_a_crash_into_a_deny_and_drops_partial_output(project, tmp
     fake.chmod(0o755)
     result = wrapper(project, "{}", GATE_PYTHON=str(fake))
     assert "gate crashed: exit 1" in reason(result.stdout) and "partial" not in result.stdout
+
+
+# --- the CRM logging BCC and follow-up register (real use) -------------------------
+
+LOG_BCC = "12345@bcc.crm.example"
+
+
+def draft(**extra):
+    """The demo draft with extra or changed fields."""
+    return payload(**{"to": [CONTACT], "subject": "Northwind supply", "body": DRAFT_TEXT, **extra})
+
+
+def with_log_bcc(project, bcc=(LOG_BCC,)):
+    path = evidence.USER_CONFIG
+    user = json.loads(path.read_text())
+    user["crm_bcc"] = list(bcc)
+    path.write_text(json.dumps(user))
+
+
+def test_crm_logging_bcc_is_not_a_second_recipient(project):
+    record_price(project)
+    with_log_bcc(project)
+    assert run(project, draft(bcc=[LOG_BCC])) == ""
+    assert log_lines(project)[-1]["decision"] == "allow"
+
+
+def test_bcc_not_in_user_config_is_still_a_recipient(project):
+    record_price(project)
+    assert "one recipient per gated draft (found 2" in reason(run(project, draft(bcc=[LOG_BCC])))
+
+
+def test_logging_address_in_cc_counts(project):
+    with_log_bcc(project)
+    assert "found 2" in reason(run(project, draft(cc=[LOG_BCC])))
+
+
+def test_project_config_cannot_add_a_logging_bcc(project):
+    cfg = json.loads((project / ".gates" / "config.json").read_text())
+    cfg["crm_bcc"] = [LOG_BCC]
+    (project / ".gates" / "config.json").write_text(json.dumps(cfg))
+    assert "found 2" in reason(run(project, draft(bcc=[LOG_BCC])))
+
+
+@pytest.mark.parametrize("bad", ["x@y.z", ["not an address"], [3], ["a b@c.d"]])
+def test_crm_bcc_must_be_a_list_of_addresses(project, bad):
+    path = evidence.USER_CONFIG
+    path.write_text(json.dumps({**json.loads(path.read_text()), "crm_bcc": bad}))
+    assert "crm_bcc" in reason(run(project, payload()))
+
+
+def test_reply_subject_is_checked_as_a_follow_up(project):
+    record_price(project)
+    run(project, draft(subject="Re: Northwind supply"))
+    assert log_lines(project)[-1]["register"] == "follow_up"
+    run(project, draft(subject="Northwind supply"))
+    assert log_lines(project)[-1]["register"] == "cold"
