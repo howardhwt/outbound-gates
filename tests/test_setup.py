@@ -24,10 +24,29 @@ def env(tmp_path):
     return home, project, managed
 
 
+def _main(env, argv):
+    home, _, managed = env
+    return setup.main(argv, home=home, managed=[managed])
+
+
+def _hash_from(argv, env):
+    """Run the preview quietly and return its PLANHASH."""
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _main(env, argv)
+    found = re.search(r"PLANHASH (\w+)", buf.getvalue())
+    return found.group(1) if found else "no-preview-hash"
+
+
 def run(env, *extra):
+    """setup with these flags; a bare --yes is turned into --yes <PLANHASH from a preview>."""
     home, project, managed = env
     argv = ["--project", str(project), "--plugin-root", str(ROOT), *extra]
-    return setup.main(argv, home=home, managed=[managed])
+    if "--yes" in argv and argv[argv.index("--yes") + 1:argv.index("--yes") + 2] in ([], ["--strict"], ["--no-strict"]):
+        preview = [a for a in argv if a != "--yes"]
+        argv = preview + ["--yes", _hash_from(preview, env)]
+    return _main(env, argv)
 
 
 def user_settings(home):
@@ -210,7 +229,10 @@ def test_install_needs_plugin_root(env, capsys):
 
 def uninstall(env, project=None, *extra):
     home, proj, managed = env
-    return setup.main(["--project", str(project or proj), "--uninstall", *extra], home=home, managed=[managed])
+    argv = ["--project", str(project or proj), "--uninstall", *[a for a in extra if a != "--yes"]]
+    if "--yes" in extra:
+        argv += ["--yes", _hash_from(argv, env)]
+    return setup.main(argv, home=home, managed=[managed])
 
 
 def test_uninstall_preview_writes_nothing(env):
@@ -238,7 +260,8 @@ def test_uninstall_keeps_user_hooks_while_another_project_uses_them(env, tmp_pat
     other = tmp_path / "other"
     other.mkdir()
     run(env, "--yes")
-    setup.main(["--project", str(other), "--plugin-root", str(ROOT), "--yes"], home=home, managed=[managed])
+    other_argv = ["--project", str(other), "--plugin-root", str(ROOT)]
+    setup.main(other_argv + ["--yes", _hash_from(other_argv, env)], home=home, managed=[managed])
     uninstall(env, None, "--yes")
     assert "hooks" in user_settings(home)
     assert (net(home) / "session_check.py").exists()
@@ -249,7 +272,9 @@ def test_uninstall_keeps_user_hooks_while_another_project_uses_them(env, tmp_pat
 def test_uninstall_runs_from_the_copy_without_the_plugin(env):
     home, project, _ = env
     run(env, "--yes")
-    proc = subprocess.run([sys.executable, str(net(home) / "setup.py"), "--project", str(project), "--uninstall", "--yes"],
+    planhash = _hash_from(["--project", str(project), "--uninstall"], env)
+    proc = subprocess.run([sys.executable, str(net(home) / "setup.py"), "--project", str(project), "--uninstall",
+                           "--yes", planhash],
                           capture_output=True, text=True, env={**os.environ, "HOME": str(home)}, cwd=str(home))
     assert proc.returncode == 0, proc.stderr
     assert "hooks" not in user_settings(home)
@@ -330,3 +355,142 @@ def test_strict_and_no_strict_together_is_bad_input(env):
 def test_strict_matchers_match_session_check():
     from hooks import session_check as sc
     assert sorted(sc.STRICT_MATCHERS) == sorted([setup.STRICT_MCP_MATCHER, setup.STRICT_FILE_MATCHER])
+
+
+# --- PR 2 extras: plan hash, lock, log, first run, name check ---
+
+def preview_args(env, *extra):
+    _, project, _ = env
+    return ["--project", str(project), "--plugin-root", str(ROOT), *extra]
+
+
+def test_yes_needs_the_planhash(env, capsys):
+    assert _main(env, preview_args(env, "--yes")) == 2
+    assert "needs the PLANHASH" in capsys.readouterr().err
+
+
+def test_plan_changed_since_preview_is_refused(env, capsys):
+    home, project, _ = env
+    planhash = _hash_from(preview_args(env), env)
+    (project / ".claude").mkdir()
+    (project / ".claude" / "settings.local.json").write_text(json.dumps(
+        {"permissions": {"deny": ["mcp__claude_ai_Gmail__reply"]}}))  # the plan now adds one rule fewer
+    assert _main(env, preview_args(env, "--yes", planhash)) == 3
+    assert "plan changed" in capsys.readouterr().err
+    assert not net(home).exists()
+
+
+def test_unrelated_settings_changes_keep_the_hash(env):
+    home, _, _ = env
+    planhash = _hash_from(preview_args(env), env)
+    (home / ".claude" / "settings.json").write_text(json.dumps({"tui": "fullscreen", "model": "x"}))
+    assert _main(env, preview_args(env, "--yes", planhash)) == 0
+
+
+def test_lock_refuses_a_second_run_and_clears_a_stale_one(env, capsys):
+    home, _, _ = env
+    net(home).mkdir(parents=True)
+    (net(home) / ".lock").write_text(str(os.getpid()))  # a live owner
+    planhash = _hash_from(preview_args(env), env)
+    assert _main(env, preview_args(env, "--yes", planhash)) == 1
+    assert "holds" in capsys.readouterr().err
+    (net(home) / ".lock").write_text("999999")  # no such process
+    assert _main(env, preview_args(env, "--yes", planhash)) == 0
+    assert not (net(home) / ".lock").exists()
+
+
+def test_setup_log_records_install_and_uninstall(env):
+    home, project, _ = env
+    run(env, "--yes")
+    uninstall(env, None, "--yes")
+    lines = [json.loads(l) for l in (net(home) / "setup.log").read_text().splitlines()]
+    assert [l["action"] for l in lines] == ["install", "uninstall"]
+    assert lines[0]["project"] == str(project.resolve()) and lines[0]["schema"] == 1 and lines[0]["planhash"]
+
+
+def test_manifest_records_file_hashes_and_deny_rules(env):
+    home, project, _ = env
+    run(env, "--yes")
+    manifest = json.loads((net(home) / "installed.json").read_text())
+    assert set(manifest["files"]) == set(setup.NET_FILES)
+    assert manifest_entry(home, project)["deny_rules"] == setup.load_names(ROOT)["deny_rules"]
+
+
+def test_first_run_file_mode(env, tmp_path):
+    home, project, _ = env
+    crm = project / "crm.json"
+    crm.write_text("{}")
+    assert run(env, "--crm-source", "file", "--crm-path", "crm.json", "--yes") == 0
+    assert json.loads((project / ".gates" / "config.json").read_text()) == {"crm_source": "file", "crm_path": "crm.json"}
+
+
+def test_first_run_merges_without_overwriting(env):
+    home, project, _ = env
+    (project / ".gates").mkdir()
+    (project / ".gates" / "config.json").write_text(json.dumps({"register": "warm"}))
+    (project / "crm.json").write_text("{}")
+    run(env, "--crm-source", "file", "--crm-path", "crm.json", "--yes")
+    assert json.loads((project / ".gates" / "config.json").read_text())["register"] == "warm"
+
+
+def test_first_run_conflict_skips_only_the_config_step(env, capsys):
+    home, project, _ = env
+    (project / ".gates").mkdir()
+    (project / ".gates" / "config.json").write_text(json.dumps({"crm_source": "file"}))
+    assert run(env, "--crm-source", "hubspot", "--sender-owner", "1", "--yes") == 1
+    out = capsys.readouterr().out
+    assert "config step was skipped" in out and "crm_source is already 'file'" in out
+    assert json.loads((project / ".gates" / "config.json").read_text()) == {"crm_source": "file"}
+    assert "PreToolUse" in user_settings(home)["hooks"]  # the rest of setup still installed
+
+
+@pytest.mark.parametrize("key_text,mode,problem", [
+    (None, None, "no HubSpot key"),
+    ("pat-one two\n", 0o600, "exactly one token"),
+    ("line1\nline2\n", 0o600, "exactly one token"),
+    ("pat-abc\n", 0o644, "readable by others"),
+])
+def test_first_run_hubspot_key_checks(env, key_text, mode, problem):
+    home, project, _ = env
+    key = home / ".config" / "outbound-gates" / "hubspot.key"
+    if key_text is not None:
+        key.parent.mkdir(parents=True)
+        key.write_text(key_text)
+        os.chmod(key, mode)
+    config = setup.plan_config(project, home, "hubspot", None, "91")
+    assert problem in config["error"] and config["add"] == {}
+
+
+def test_first_run_hubspot_ok_and_never_prints_the_key(env, capsys):
+    home, project, _ = env
+    key = home / ".config" / "outbound-gates" / "hubspot.key"
+    key.parent.mkdir(parents=True)
+    key.write_text("pat-secret-token\n")
+    os.chmod(key, 0o600)
+    assert run(env, "--crm-source", "hubspot", "--sender-owner", "91", "--yes") == 0
+    assert "pat-secret-token" not in capsys.readouterr().out
+    assert json.loads((project / ".gates" / "config.json").read_text()) == {"crm_source": "hubspot", "sender_owner": "91"}
+
+
+def test_first_run_needs_owner_in_hubspot_mode(env):
+    home, project, _ = env
+    assert "needs --sender-owner" in setup.plan_config(project, home, "hubspot", None, None)["error"]
+
+
+def test_check_names_report(env, tmp_path, capsys):
+    home, project, _ = env
+    (home / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"deny": ["mcp__claude_ai_Gmail__reply"]}}))
+    loaded = tmp_path / "loaded.txt"
+    loaded.write_text("mcp__claude_ai_Slack__slack_send_message\nmcp__claude_ai_Gmail__list_drafts\n")
+    run(env, "--check-names", str(loaded))
+    out = capsys.readouterr().out
+    assert "advisory" in out
+    assert "mcp__claude_ai_Slack__slack_send_message: matches a loaded tool" in out
+    assert "mcp__claude_ai_Gmail__reply: already denied" in out
+    assert "mcp__claude_ai_Gmail__forward: possibly dead" in out
+
+
+def test_check_names_is_preview_only(env, tmp_path):
+    loaded = tmp_path / "loaded.txt"
+    loaded.write_text("")
+    assert _main(env, preview_args(env, "--check-names", str(loaded), "--yes", "abc")) == 2

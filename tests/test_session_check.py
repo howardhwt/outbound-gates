@@ -10,6 +10,14 @@ import pytest
 
 from hooks import session_check as sc
 
+
+@pytest.fixture(autouse=True)
+def isolated_config(tmp_path, monkeypatch):
+    """Never read the real ~/.config/outbound-gates of the machine running the tests."""
+    config = tmp_path / "config-outbound-gates"
+    monkeypatch.setattr(sc, "CONFIG_DIR", config)
+    return config
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -465,3 +473,63 @@ def test_strict_off_outside_gated_projects(strict, tmp_path):
     other = tmp_path / "other"
     other.mkdir()
     assert guard_call(other, "Bash", command="curl -X POST https://x -d a=1") == ""
+
+
+# --- tamper tripwire and uninstalled note ---
+
+def write_manifest(config, project, files=None, deny=None, user_hooks=True):
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "installed.json").write_text(json.dumps({
+        "schema": 1, "user_hooks": user_hooks, "files": files or {},
+        "projects": {str(project.resolve()): {"deny_rules": deny or []}}}))
+
+
+def test_tamper_reports_changed_and_missing_files(isolated_config, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (isolated_config).mkdir(parents=True)
+    (isolated_config / "gate-net.sh").write_text("original")
+    import hashlib
+    sha = hashlib.sha256(b"original").hexdigest()
+    write_manifest(isolated_config, project, files={"gate-net.sh": sha, "blocked.json": sha}, user_hooks=False)
+    (isolated_config / "gate-net.sh").write_text("edited to always allow")
+    found = " ".join(sc.tamper_findings(project, tmp_path / "home"))
+    assert "gate-net.sh" in found and "changed after setup" in found
+    assert "blocked.json is missing" in found
+
+
+def test_tamper_reports_removed_hooks_and_deny_rules(isolated_config, tmp_path):
+    project = tmp_path / "proj"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.local.json").write_text(json.dumps({"permissions": {"deny": ["a"]}}))
+    write_manifest(isolated_config, project, deny=["a", "b"])
+    found = " ".join(sc.tamper_findings(project, tmp_path / "home"))
+    assert "watchdog hook was removed" in found and "draft-guard hook was removed" in found
+    assert "1 deny rules were removed" in found
+
+
+def test_no_manifest_no_findings(tmp_path):
+    assert sc.tamper_findings(tmp_path, tmp_path) == []
+
+
+def test_uninstalled_note(isolated_config, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    isolated_config.mkdir(parents=True)
+    key = str(project.resolve())
+    (isolated_config / "setup.log").write_text(
+        json.dumps({"action": "install", "project": key, "ts": "2026-11-01T00:00:00+00:00"}) + "\n"
+        + json.dumps({"action": "uninstall", "project": key, "ts": "2026-11-03T00:00:00+00:00"}) + "\n")
+    assert "uninstalled for this project on 2026-11-03" in sc.uninstalled_note(project)
+    with (isolated_config / "setup.log").open("a") as handle:
+        handle.write(json.dumps({"action": "install", "project": key, "ts": "2026-11-04T00:00:00+00:00"}) + "\n")
+    assert sc.uninstalled_note(project) == ""
+
+
+def test_plugin_mode_shows_tamper_warnings(isolated_config, tmp_path, monkeypatch):
+    project = tmp_path / "proj"
+    (project / ".gates").mkdir(parents=True)
+    write_manifest(isolated_config, project, deny=["a"])
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    out = json.loads(sc.plugin({"session_id": "s", "cwd": str(project)}, {}))
+    assert out["systemMessage"].startswith("send gate: on") and "safety net changed" in out["systemMessage"]

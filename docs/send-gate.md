@@ -64,6 +64,15 @@ It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<d
 
    It removes only the deny rules setup added, the hooks once no project uses them (or with `--all`), and the copied files.
 
+### Preview, apply and the record setup keeps
+
+- **Preview, then apply with a fingerprint.** The preview prints a `PLANHASH`, and the apply command must carry it (`--yes PLANHASH`). If what setup would change has moved since you reviewed it, setup refuses with exit 3 and you preview again. The hash covers only setup's own changes and the files it copies. Other edits to your settings, including Claude Code's own, don't invalidate it.
+- **One run at a time.** A lock file (`~/.config/outbound-gates/.lock`, holding the process id) refuses a second concurrent run. A lock left by a process that has gone is taken over.
+- **Log.** Every applied install and uninstall appends one line to `~/.config/outbound-gates/setup.log`: time, action, project, plugin version, PLANHASH. When the last entry for a project is an uninstall, the watchdog says when the net was uninstalled. A clean uninstall leaves a trace, not silence.
+- **Tamper tripwire.** `installed.json` records a sha256 of each copied file, the deny rules each project should have, and that the hooks are installed. At session start, both the user-level watchdog and the plugin's own hook compare that record with what's there, and warn when a copied file changed or went missing, a hook was removed, or deny rules were removed. Because both check, removing one still leaves the other reporting. It only detects: an agent that edits `installed.json` along with the files isn't caught.
+- **Guided first run.** `--crm-source hubspot --sender-owner ID` or `--crm-source file --crm-path PATH` adds those keys to `.gates/config.json`. It never overwrites a key that's already set; a different existing value is reported for you to fix by hand. In HubSpot mode it checks that `~/.config/outbound-gates/hubspot.key` exists, holds one token on one line, and isn't readable by others. It never prints the key and never runs `chmod` for you. If the step can't run, everything else still installs, and setup exits 1 with the reason.
+- **Name check (advisory).** `--check-names FILE` (preview only) compares each deny rule with a list of tool names, one per line, that the agent supplies from its own tool list. Each rule is reported as matching a loaded tool, already denied (denied tools are hidden from the agent, so they can't be listed), or possibly dead. It's advisory because the agent supplies the list. It exists because of the `list_labels` lesson: a deny rule naming a tool that doesn't exist blocks nothing.
+
 ### Strict mode (`--strict`)
 
 Strict mode is opt-in per project. Add `--strict` to the setup command, both the preview and the apply. It stays on when setup is re-run, and `--no-strict` turns it off. In a strict project the user-level guard runs on every MCP tool and on Bash, Edit and Write, and also refuses:
