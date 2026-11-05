@@ -12,6 +12,7 @@ Context: a live check sent a real email because the hook wasn't loaded (docs/sen
 - ~~**Allow-list mode and a Bash hook (P1).**~~ Done 2026-11-04 as opt-in strict mode (`setup --strict`): read-verb allow-list for MCP tools plus `~/.config/outbound-gates/allow.json`, a Bash guard (mail commands, data-sending curl/wget, edits to the gate's files) and an Edit/Write guard on the gate's files. Still open: browser skills, remote runs, obfuscated commands. Those need the send service.
 - ~~**Installable safety net, PR 2 (P2).**~~ Done 2026-11-04: PLANHASH between preview and apply (exit 3 when the plan changed), a lock against concurrent runs, `setup.log` with an "uninstalled on <date>" note, a sha256 tamper tripwire checked by both the watchdog and the plugin's own hook, a guided first run (`--crm-source`, `--crm-path`, `--sender-owner`, key-file checks) and the advisory `--check-names` report.
 - **The gate becomes the only way to send (P1, wave 2).** A small service that holds the email credentials and exposes a `send` endpoint running the same `evaluate()`; agents call it through the MCP server, and Clay through HTTP. The agent never holds Gmail or Apollo send access. It runs where the agent can't read the credentials (hosted, or a separate OS account).
+  - Design (draft, 2026-11-04): `docs/designs/send-service.md`.
 - **Agent sending (later).** Switched on only through that service.
 
 ## Wave 2: send gate
