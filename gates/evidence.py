@@ -443,6 +443,80 @@ def claims_for(gates_home: Path, contact: str) -> list[dict]:
     return claims
 
 
+# --- checked maths ---------------------------------------------------------
+
+def parse_calc_inputs(raw: Iterable[str]) -> dict[str, dict]:
+    """["theirs=0.006", "ours=own:$0.002"] -> {name: {"value", "source"}}."""
+    inputs: dict[str, dict] = {}
+    for item in raw:
+        name, sep, value = item.partition("=")
+        name = name.strip()
+        if not sep or not name.isidentifier() or not value.strip():
+            raise UsageError(f"--input must be NAME=VALUE or NAME=own:VALUE, got {item!r}")
+        if name in inputs:
+            raise UsageError(f"input {name} is given twice")
+        source = "claim"
+        value = value.strip()
+        if value.startswith("own:"):
+            source, value = "own", value[4:].strip()
+        inputs[name] = {"value": value, "source": source}
+    return inputs
+
+
+def check_calc(calc: dict, verified_values: set[str], own_facts: set[str]) -> str | None:
+    """Recompute one stored calculation from current inputs. None if it holds, else why not."""
+    from . import calc as calc_module
+
+    inputs = calc.get("inputs") or {}
+    for name, item in inputs.items():
+        value = normalise_number(str(item.get("value", "")))
+        if item.get("source") == "own":
+            if value not in own_facts:
+                return f"input {name} = {item.get('value')} is not one of your own facts (own_facts)"
+        elif value not in verified_values:
+            return f"input {name} = {item.get('value')} has no verified stored source for this contact"
+    try:
+        calc_module.check(str(calc.get("formula", "")), inputs, str(calc.get("show", "")))
+    except calc_module.CalcError as err:
+        return str(err)
+    return None
+
+
+def record_calc(gates_home: Path, contact: str, formula: str, inputs: dict[str, dict], show: str,
+                *, settings: dict, now: datetime | None = None) -> Path:
+    """Check a calculation against this contact's verified claims and own facts, then store it."""
+    gates_home = Path(gates_home)
+    claims = claims_for(gates_home, contact)
+    verified = {normalise_number(str(c.get("value", ""))) for c in claims if verify_claim(c, gates_home)}
+    own = {normalise_number(v) for v in settings["rules"].get("own_facts", [])}
+    calc = {"v": FORMAT_VERSION, "formula": formula.strip(), "inputs": inputs, "show": show.strip()}
+    reason = check_calc(calc, verified, own)
+    if reason:
+        raise EvidenceError(reason)
+    calc["recorded_at"] = (now or datetime.now(timezone.utc)).replace(microsecond=0).isoformat()
+    key = hashlib.sha256(json.dumps([calc["formula"], inputs, calc["show"]], sort_keys=True).encode()).hexdigest()[:16]
+    path = draft_dir(gates_home, contact) / "calcs" / f"{key}.json"
+    _atomic_write(path, (json.dumps(calc, indent=2) + "\n").encode("utf-8"))
+    return path
+
+
+def calcs_for(gates_home: Path, contact: str) -> list[dict]:
+    """Every stored calculation for a recipient. Missing folder: none."""
+    folder = draft_dir(Path(gates_home), contact) / "calcs"
+    if not folder.is_dir():
+        return []
+    calcs = []
+    for path in sorted(folder.glob("*.json")):
+        try:
+            calc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as err:
+            raise UsageError(f"calculation file unreadable: {path} ({err})") from None
+        if not isinstance(calc, dict):
+            raise UsageError(f"calculation file must hold a JSON object: {path}")
+        calcs.append(calc)
+    return calcs
+
+
 def verify_claim(claim: dict, gates_home: Path) -> bool:
     """Offline re-check: stored page exists, matches its hash, holds the quote and value."""
     try:
@@ -492,6 +566,17 @@ def record_command(gates_home: Path, contact: str) -> str:
     )
 
 
+def calc_command(gates_home: Path, contact: str) -> str:
+    """The calc command as a shell line, for the gate's block message."""
+    import shlex
+
+    return (
+        f"PYTHONPATH={shlex.quote(str(PLUGIN_ROOT))} python3 -m gates.evidence calc"
+        f" --gates-home {shlex.quote(str(gates_home))} --contact {shlex.quote(contact)}"
+        " --formula '(theirs - ours) / theirs * 100' --input theirs=VALUE --input ours=own:VALUE --show 'SHOWN'"
+    )
+
+
 def main(argv: list[str] | None = None, fetch: Fetch = urllib_fetch) -> int:
     parser = argparse.ArgumentParser(description="Record a verified source for a gated email.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -501,6 +586,13 @@ def main(argv: list[str] | None = None, fetch: Fetch = urllib_fetch) -> int:
     rec.add_argument("--url", required=True, help="a page on the company's own site")
     rec.add_argument("--quote", required=True, help="the exact sentence on the page")
     rec.add_argument("--value", required=True, help="the number, as written in the email")
+    cal = sub.add_parser("calc", help="check and store a number the email works out from sourced numbers")
+    cal.add_argument("--gates-home", required=True, help="the project's .gates folder")
+    cal.add_argument("--contact", required=True, help="the recipient's email address")
+    cal.add_argument("--formula", required=True, help="arithmetic over input names, e.g. '(theirs - ours) / theirs * 100'")
+    cal.add_argument("--input", action="append", default=[], metavar="NAME=VALUE",
+                     help="a verified claim value (NAME=0.006) or one of your own facts (NAME=own:0.002); repeat")
+    cal.add_argument("--show", required=True, help="the number as written in the email, e.g. 70%%")
     args = parser.parse_args(argv)
 
     gates_home = Path(args.gates_home).expanduser()
@@ -508,6 +600,11 @@ def main(argv: list[str] | None = None, fetch: Fetch = urllib_fetch) -> int:
         if not gates_home.is_absolute():
             raise UsageError("--gates-home must be an absolute path")
         settings = load_settings(PLUGIN_ROOT, gates_home.parent)
+        if args.command == "calc":
+            path = record_calc(gates_home, args.contact, args.formula, parse_calc_inputs(args.input),
+                               args.show, settings=settings)
+            print(f"recorded: {path}")
+            return 0
         crm, _ = read_crm(settings, args.contact)
         path = record_claim(
             gates_home, args.contact, args.url, args.quote, args.value,

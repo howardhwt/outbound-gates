@@ -13,7 +13,7 @@ The checker and the reference docs ship with this plugin. The plugin root is two
 
 ## Steps
 
-1. **Build the claim file first.** Every number, name and product fact in the email gets a row: the claim, its value, the URL, the date checked. Rows come from the verdict card and nowhere else. A claim with no URL becomes a question in the email, or it is cut. See `examples/claims.json`.
+1. **Build the claim file first.** Every number, name and product fact in the email gets a row: the claim, its value, the URL, the date checked. Rows come from the verdict card and nowhere else. A claim with no URL becomes a question in the email, or it is cut. See `examples/claims.json`. A number you work out from sourced numbers (a saving, a ratio) is not a claim. In the send gate, record it as a calculation with `python -m gates.evidence calc` (see `docs/send-gate.md`, "Recording a calculation"), and the gate recomputes it.
 2. **Pick the register.** A first email to a named person, a first email to a role address, or a follow-up. Each has its own length and sign-off in the gate config.
 3. **Write by arm.**
    - *switch*: one observation about their product, then a question about unit cost, then the offer.
