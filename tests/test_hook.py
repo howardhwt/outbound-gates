@@ -13,6 +13,8 @@ import pytest
 from gates import evidence
 from hooks import gate_gmail
 
+from conftest import demo_user_config
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "hook_input" / "gmail_create_draft.json").read_text())
 DRAFT_TEXT = (ROOT / "demo" / "gate" / "northwind-draft.txt").read_text(encoding="utf-8")
@@ -29,6 +31,8 @@ def project(tmp_path):
     shutil.copytree(ROOT / "demo" / "pages", proj / "demo" / "pages")
     shutil.copy(ROOT / "demo" / "gate_crm.json", proj / "demo" / "gate_crm.json")
     shutil.copy(ROOT / "demo" / "gate" / "config.json", proj / ".gates" / "config.json")
+    demo_user_config(proj / ".config" / "outbound-gates" / "config.json")
+    demo_user_config(evidence.USER_CONFIG)  # decide() runs in-process
     return proj
 
 
@@ -53,7 +57,7 @@ def reason(out):
 
 
 def record_price(project):
-    settings = evidence.load_settings(ROOT, project, user_config=project / "none.json")
+    settings = evidence.load_settings(ROOT, project, user_config=project / ".config" / "outbound-gates" / "config.json")
     evidence.record_claim(project / ".gates", CONTACT, "https://northwind-audio.example/pricing",
                           QUOTE, "$0.006", settings=settings, crm=evidence.load_crm(settings), now=NOW)
 
@@ -137,7 +141,7 @@ def test_hook_block_list_matches_load_settings(project):
     cfg = json.loads((project / ".gates" / "config.json").read_text())
     cfg["blocked_tools"] = ["smartlead_send", "apollo_sequences_create"]
     (project / ".gates" / "config.json").write_text(json.dumps(cfg))
-    settings = evidence.load_settings(ROOT, project, user_config=project / "none.json")
+    settings = evidence.load_settings(ROOT, project, user_config=project / ".config" / "outbound-gates" / "config.json")
     assert gate_gmail.blocked_tools(ROOT, project) == settings["blocked_tools"]
 
 
@@ -184,6 +188,7 @@ def test_recorded_source_lets_the_draft_through_and_logs_it(project):
     entry = log_lines(project)[-1]
     assert entry["decision"] == "allow" and entry["recipient_domain"] == "northwind-audio.example"
     assert entry["crm_path"].endswith("demo/gate_crm.json") and len(entry["inputs_sha256"]) == 64
+    assert entry["style"] == "example (no style.json)"  # which style judged the draft
 
 
 def test_html_body_with_an_invented_number_is_denied(project):

@@ -6,7 +6,7 @@ import pytest
 from gates.checker import FAIL, WARN, check, load_claims, load_config, main, passed
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = load_config(ROOT / "gates" / "config.example.json")
+CONFIG = load_config(ROOT / "demo" / "rules.json")
 CLAIMS = load_claims(ROOT / "examples" / "claims.json")
 GOOD = (ROOT / "examples" / "draft_pass.txt").read_text(encoding="utf-8")
 BAD = (ROOT / "examples" / "draft_fail.txt").read_text(encoding="utf-8")
@@ -88,7 +88,7 @@ def test_unknown_register_raises():
 
 
 def test_cli_exit_codes(capsys):
-    base = ["--config", str(ROOT / "gates" / "config.example.json"), "--register", "cold"]
+    base = ["--config", str(ROOT / "demo" / "rules.json"), "--register", "cold"]
     assert main([str(ROOT / "examples" / "draft_fail.txt"), *base]) == 1
     assert "BLOCKED" in capsys.readouterr().out
 

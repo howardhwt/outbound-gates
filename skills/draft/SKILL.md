@@ -14,16 +14,16 @@ The checker and the reference docs ship with this plugin. The plugin root is two
 ## Steps
 
 1. **Build the claim file first.** Every number, name and product fact in the email gets a row: the claim, its value, the URL, the date checked. Rows come from the verdict card and nowhere else. A claim with no URL becomes a question in the email, or it is cut. See `examples/claims.json`. A number you work out from sourced numbers (a saving, a ratio) is not a claim. In the send gate, record it as a calculation with `python -m gates.evidence calc` (see `docs/send-gate.md`, "Recording a calculation"), and the gate recomputes it.
-2. **Pick the register.** A first email to a named person, a first email to a role address, or a follow-up. Each has its own length and sign-off in the gate config.
+2. **Pick the register.** A first email or a follow-up. Each has its own length, and may have a sign-off, in the project's style (`.gates/style.json`).
 3. **Write by arm.**
    - *switch*: one observation about their product, then a question about unit cost, then the offer.
    - *supply*: their listed price, your price, then what they keep per unit as a number and a percentage.
    - Other arms get no draft. Say why and stop.
 4. **Run the gate checker.**
    ```
-   PYTHONPATH="${CLAUDE_SKILL_DIR}/../.." python3 -m gates draft.txt --config "${CLAUDE_SKILL_DIR}/../../gates/config.example.json" --register cold --claims claims.json
+   PYTHONPATH="${CLAUDE_SKILL_DIR}/../.." python3 -m gates draft.txt --project . --register cold --claims claims.json
    ```
-   Use your own copy of the config once you have one. Fix what it reports and run it again. After two failed rounds, stop and report the failing rule.
+   Run it from the project folder. `--project` uses the same rules as the send gate there: the plugin's truth rules, the project's style and the person's own facts. Never edit `.gates/style.json` to make a draft pass; style is the person's choice. Fix what it reports and run it again. After two failed rounds, stop and report the failing rule.
 5. **Run the pre-send check.** See `skills/presend-check`. With a CRM export on disk, the command in that skill runs the same four questions.
 6. **Create the draft in the mail client.** Include the CRM logging address in BCC so the send is recorded.
 7. **Log it at once.** Write a DRAFTED note and a SEND task on the company before starting the next account. A draft that is not logged will be written twice.

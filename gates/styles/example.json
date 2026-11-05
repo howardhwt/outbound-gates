@@ -1,0 +1,26 @@
+{
+  "_comment": "The example house style (the demo's fictional sender, Acme Transcribe). Apply with setup --style example. It only adds style; sources and own facts are never set here.",
+  "registers": {
+    "cold": {
+      "words": [
+        80,
+        150
+      ],
+      "sign_off": "Thanks,",
+      "required_close": "If this isn't relevant, a one-line no is fine."
+    },
+    "follow_up": {
+      "words": [
+        40,
+        80
+      ],
+      "sign_off": "Thanks,\nSam"
+    }
+  },
+  "max_spaced_hyphens": 0,
+  "min_contractions": 2,
+  "bold_allowed_patterns": [
+    "Acme Transcribe",
+    "\\$\\d+(?:\\.\\d+)?"
+  ]
+}

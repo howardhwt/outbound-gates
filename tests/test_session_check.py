@@ -30,6 +30,7 @@ def write(path: Path, data) -> None:
 def env(tmp_path):
     home, project = tmp_path / "home", tmp_path / "proj"
     (project / ".gates").mkdir(parents=True)
+    (project / ".gates" / "style.json").write_text("{}\n")  # a project set up with a style
     install = home / ".claude" / "plugins" / "cache" / "og"
     write(install / "hooks" / "hooks.json", {"hooks": {"PreToolUse": [{"matcher": "mcp__.*"}]}})
     return home, project, install
@@ -533,3 +534,26 @@ def test_plugin_mode_shows_tamper_warnings(isolated_config, tmp_path, monkeypatc
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     out = json.loads(sc.plugin({"session_id": "s", "cwd": str(project)}, {}))
     assert out["systemMessage"].startswith("send gate: on") and "safety net changed" in out["systemMessage"]
+
+
+# --- style notices (for the person, not the agent) -------------------------------------
+
+def test_notice_names_the_example_style_when_there_is_no_style_file(env):
+    home, project, path = env
+    (project / ".gates" / "style.json").unlink()
+    install(home, path, project=project)
+    enable(project / ".claude" / "settings.local.json")
+    out = json.loads(run_watchdog(home, project))
+    assert "no .gates/style.json, so the example style applies" in out["systemMessage"]
+    assert "hookSpecificOutput" not in out  # the agent is not told to act on it
+
+
+def test_notice_when_style_changed_since_setup(env, monkeypatch):
+    home, project, path = env
+    config = home / ".config" / "outbound-gates"
+    monkeypatch.setattr(sc, "CONFIG_DIR", config)
+    write(config / "installed.json", {"projects": {str(project.resolve()): {
+        "style_sha256": sc._sha_file(project / ".gates" / "style.json")}}})
+    assert sc.style_notes(project) == []
+    (project / ".gates" / "style.json").write_text('{"min_contractions": 0}\n')
+    assert "changed since setup recorded it" in sc.style_notes(project)[0]

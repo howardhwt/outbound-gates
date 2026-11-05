@@ -118,10 +118,48 @@ def _atomic_write(path: Path, data: bytes) -> None:
 
 # --- settings ---------------------------------------------------------------
 
+def project_rules(plugin_root: Path, project_dir: Path) -> tuple[dict, str]:
+    """The gate's rules for a project, and where their style came from.
+
+    Truth rules always come from the plugin's defaults. The style comes from
+    <project>/.gates/style.json when it exists. When it doesn't, the project
+    keeps the example style, so a project set up before styles existed (or a
+    bare folder) never gets looser on update; setup writes style.json for new
+    projects. Returns (rules, source) with source "default", a preset name,
+    "custom" or "example (no style.json)".
+    """
+    from .checker import merge_style
+
+    plugin_root, project_dir = Path(plugin_root), Path(project_dir)
+    defaults = _load_json(plugin_root / "gates" / "hook.config.json", "gate settings")
+    base = load_config(plugin_root / "gates" / defaults.get("rules", "config.example.json"))
+    styles_dir = plugin_root / "gates" / "styles"
+    style_file = project_dir / ".gates" / "style.json"
+    if not style_file.exists():
+        return merge_style(base, {"preset": "example"}, styles_dir), "example (no style.json)"
+    style = _load_json(style_file, "project style (.gates/style.json)")
+    rules = merge_style(base, style, styles_dir, where=str(style_file))
+    own_keys = {k for k in style if k != "_comment"}
+    source = ("default" if not own_keys else
+              style["preset"] if own_keys == {"preset"} else "custom")
+    return rules, source
+
+
+def apply_user_facts(rules: dict, user: dict, where: Path | str) -> dict:
+    """Add the user's own facts to the rules. They pass without a source, so they
+    come only from the user's own config, never the project, and only add."""
+    user_facts = user.get("own_facts", [])
+    if not isinstance(user_facts, list) or not all(isinstance(v, str) for v in user_facts):
+        raise UsageError(f"own_facts in {where} must be a list of strings, e.g. [\"$0.01\"]")
+    rules = dict(rules)
+    rules["own_facts"] = _union(rules.get("own_facts", []), user_facts)
+    return rules
+
+
 def load_settings(
     plugin_root: Path, project_dir: Path, user_config: Path | None = None
 ) -> dict:
-    """Plugin defaults, tightened (never loosened) by the project file.
+    """Plugin defaults, the project's style (project_rules), then the project file.
 
     A project may set register, sender_owner, max_unanswered, crm_source,
     crm_path, hubspot (the field mapping) and example_pages. It may only add to
@@ -131,7 +169,7 @@ def load_settings(
     """
     plugin_root, project_dir = Path(plugin_root), Path(project_dir)
     defaults = _load_json(plugin_root / "gates" / "hook.config.json", "gate settings")
-    rules = load_config(plugin_root / "gates" / defaults.get("rules", "config.example.json"))
+    rules, style_source = project_rules(plugin_root, project_dir)
     project_file = project_dir / ".gates" / "config.json"
     project = _load_json(project_file, "project gate settings") if project_file.exists() else {}
     user_file = Path(user_config) if user_config else USER_CONFIG
@@ -142,14 +180,10 @@ def load_settings(
 
     rules = dict(rules)
     rules["banned_phrases"] = _union(rules.get("banned_phrases", []), project.get("banned_phrases", []))
-    # Your own facts pass without a source, so they come only from your own config,
-    # outside the project folder the agent writes to, and only add to the plugin's list.
-    user_facts = user.get("own_facts", [])
-    if not isinstance(user_facts, list) or not all(isinstance(v, str) for v in user_facts):
-        raise UsageError(f"own_facts in {user_file} must be a list of strings, e.g. [\"$0.01\"]")
-    rules["own_facts"] = _union(rules.get("own_facts", []), user_facts)
+    rules = apply_user_facts(rules, user, user_file)
     settings = {
         "rules": rules,
+        "style_source": style_source,
         "register": project.get("register", defaults.get("register", "cold")),
         "sender_owner": project.get("sender_owner", defaults.get("sender_owner")),
         "max_unanswered": project.get("max_unanswered", defaults.get("max_unanswered")),

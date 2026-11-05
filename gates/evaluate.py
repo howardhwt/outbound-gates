@@ -103,7 +103,7 @@ def _fingerprint(
     payload = {
         "draft": [draft.recipient, draft.subject, list(map(list, draft.bodies))],
         "crm": crm,
-        "settings": {k: plain(v) for k, v in sorted(settings.items())},
+        "settings": {k: plain(v) for k, v in sorted(settings.items()) if k != "style_source"},
         "today": today.isoformat(),
         "claims": claims,
         "snapshots": evidence.snapshot_digests(claims, gates_home),

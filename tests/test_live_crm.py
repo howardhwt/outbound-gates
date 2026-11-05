@@ -17,6 +17,8 @@ from gates import evidence, hubspot
 from gates.checker import UsageError
 from hooks import gate_gmail
 
+from conftest import demo_user_config
+
 ROOT = Path(__file__).resolve().parents[1]
 CONTACT = "dana@northwind-audio.example"
 DRAFT_TEXT = (ROOT / "demo" / "gate" / "northwind-draft.txt").read_text(encoding="utf-8")
@@ -66,6 +68,7 @@ def project(tmp_path):
     shutil.copytree(ROOT / "demo" / "pages", proj / "demo" / "pages")
     (proj / ".gates" / "config.json").write_text(json.dumps({
         "crm_source": "hubspot", "sender_owner": "42", "example_pages": "demo/pages"}))
+    demo_user_config(evidence.USER_CONFIG)
     return proj
 
 

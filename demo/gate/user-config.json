@@ -1,0 +1,6 @@
+{
+  "_comment": "The demo's own facts: the fictional sender's price. Real own facts go in ~/.config/outbound-gates/config.json.",
+  "own_facts": [
+    "$0.002"
+  ]
+}

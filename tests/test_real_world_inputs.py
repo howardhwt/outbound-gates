@@ -10,7 +10,7 @@ from gates.presend import find_company, presend_check
 from gates.presend import main as presend_main
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = load_config(ROOT / "gates" / "config.example.json")
+CONFIG = load_config(ROOT / "demo" / "rules.json")
 CLAIMS = load_claims(ROOT / "examples" / "claims.json")
 GOOD = (ROOT / "examples" / "draft_pass.txt").read_text(encoding="utf-8")
 TODAY = date(2026, 10, 3)
@@ -53,11 +53,11 @@ def test_a_claim_with_no_value_or_a_bad_date_is_reported_not_crashed():
 
 
 @pytest.mark.parametrize("args, message", [
-    (["nofile.txt", "--config", "gates/config.example.json", "--register", "cold"], "draft file not found"),
+    (["nofile.txt", "--config", "demo/rules.json", "--register", "cold"], "draft file not found"),
     (["examples/draft_pass.txt", "--config", "nofile.json", "--register", "cold"], "config file not found"),
     (["examples/draft_pass.txt", "--config", "README.md", "--register", "cold"], "not valid JSON"),
-    (["examples/draft_pass.txt", "--config", "gates/config.example.json", "--register", "nope"], "unknown register"),
-    (["examples/draft_pass.txt", "--config", "gates/config.example.json", "--register", "cold", "--today", "soon"], "YYYY-MM-DD"),
+    (["examples/draft_pass.txt", "--config", "demo/rules.json", "--register", "nope"], "unknown register"),
+    (["examples/draft_pass.txt", "--config", "demo/rules.json", "--register", "cold", "--today", "soon"], "YYYY-MM-DD"),
 ])
 def test_bad_inputs_exit_2_with_one_line_and_no_traceback(args, message, capsys, monkeypatch):
     monkeypatch.chdir(ROOT)

@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from conftest import demo_user_config
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "hook_input" / "gmail_create_draft.json").read_text())
 DRAFT_TEXT = (ROOT / "demo" / "gate" / "northwind-draft.txt").read_text(encoding="utf-8")
@@ -27,6 +29,7 @@ def make_project(tmp_path):
     shutil.copytree(ROOT / "demo" / "pages", proj / "demo" / "pages")
     shutil.copy(ROOT / "demo" / "gate_crm.json", proj / "demo" / "gate_crm.json")
     shutil.copy(ROOT / "demo" / "gate" / "config.json", proj / ".gates" / "config.json")
+    demo_user_config(proj / ".config" / "outbound-gates" / "config.json")
     return proj
 
 

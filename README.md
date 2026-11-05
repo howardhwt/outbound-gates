@@ -96,8 +96,10 @@ Each step writes to the CRM before the next one starts. `examples/walkthrough/` 
 
 ```
 python -m gates examples/draft_pass.txt \
-  --config gates/config.example.json --register cold --claims examples/claims.json
+  --config demo/rules.json --register cold --claims examples/claims.json
 ```
+
+`demo/rules.json` is the full rule set the demo uses. To check a draft against the rules the send gate uses in one of your projects (the plugin's truth rules, that project's style and your own facts), pass the folder instead: `--project DIR`. The register then defaults to the project's.
 
 It exits 0 on a pass, 1 on a block and 2 when an input is wrong, such as a missing file or an unknown register. That makes it safe to use in a script or a pipeline.
 
@@ -105,12 +107,12 @@ Curly quotes and Windows line endings are flattened before the rules run, so a d
 
 | Rule | What it blocks |
 |---|---|
-| `dashes` | Em dashes, en dashes, and more spaced hyphens than the config allows |
+| `dashes` | Em dashes, en dashes, and more spaced hyphens than the style allows (no limit unless the style sets one) |
 | `length` | A word count outside the range for the register |
-| `sign_off` | A missing or wrong sign-off |
-| `required_close` | A cold email without the fixed closing line |
+| `sign_off` | A missing or wrong sign-off, when the style sets one |
+| `required_close` | A missing fixed closing line, when the style sets one |
 | `banned_phrase` | Any phrase on the banned list |
-| `bold` | Bold text that is not the product name or a price |
+| `bold` | Bold text that matches none of the style's bold patterns (no patterns: bold is allowed; an empty list: no bold) |
 | `cost_assertion` | A sentence that states what the reader pays. Asking is allowed |
 | `claims` | A number in the draft with no sourced claim behind it, or a claim with no URL |
 | `rhythm` | Warns on few contractions or three same-length sentences in a row |
@@ -118,6 +120,26 @@ Curly quotes and Windows line endings are flattened before the rules run, so a d
 The `claims` rule matters most. Every number in an email must appear in that draft's claim file with a URL and the date it was checked. A claim older than the configured age produces a warning. Numbers you derive from a sourced value, such as a margin, are listed under that claim's `derived` field. The send gate ignores `derived` values: there, a worked-out number needs a recorded calculation the gate recomputes itself (`python -m gates.evidence calc`, see `docs/send-gate.md`).
 
 Clock times, calendar dates and anything inside a URL are not treated as claims. A year is. Set `number_ignore_patterns` in the config to change what is skipped.
+
+## Truth rules and style
+
+The rules come in two kinds.
+
+**Truth rules** are the same for everyone and ship with the plugin in `gates/config.example.json`: every number needs a source (`claims`, `claim_max_age_days`), no statements of what the reader pays (`cost_assertion_patterns`), and a few clichés banned. A project can't loosen them. Your own prices go in `own_facts` in `~/.config/outbound-gates/config.json`, outside the project, because they pass without a source.
+
+**Style** is how your emails read, and each project chooses its own in `<project>/.gates/style.json`:
+
+| Style key | What it sets | How it combines |
+|---|---|---|
+| `registers` | Per register (`cold`, `follow_up`, or a new one): `words` `[low, high]`, `sign_off`, `required_close` | Merged key by key over the defaults |
+| `max_spaced_hyphens` | The most ` - ` a draft may use | Replaces; absent means no limit |
+| `min_contractions` | Fewer contractions than this is a warning | Replaces |
+| `banned_phrases` | Extra phrases to block | Only adds |
+| `bold_allowed_patterns` | Regexes bold text must match | Only adds; absent means bold is allowed |
+
+A style can also say `"preset": "example"` to start from `gates/styles/example.json` (80 to 150 word cold emails, a fixed sign-off and closing line, no spaced hyphens, two contractions) and change keys on top. `{}` is the neutral style: the truth rules and a wide length band. A style file that sets a truth rule is refused.
+
+Setup writes `style.json` for a new project (neutral unless you pass `--style example` or `--style FILE`). A project with no `style.json`, such as one set up before 0.6.0, keeps the example style, so updating never makes its rules looser; the session start says so. If `style.json` changes after setup, the session start tells you.
 
 ## The pre-send check
 
@@ -168,14 +190,14 @@ claude --plugin-url https://github.com/howardhwt/outbound-gates/releases/latest/
 
 Four skills load: `source`, `qualify`, `draft` and `presend-check`. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
 
-The skills ship with `gates/config.example.json`. Copy it, change the rules to your own, and pass your copy with `--config`.
+The skills check drafts with `--project`, so they use the same rules as the send gate: the plugin's truth rules plus your project's style (see "Truth rules and style").
 
 The plugin also installs the send gate hook (`hooks/hooks.json`), which denies Gmail send, reply and forward calls. Install it for your outbound project only, with `--scope project` or `--scope local`. At the default user scope it would block those calls in every project. Setup is in `docs/send-gate.md`. List your own prices in `~/.config/outbound-gates/config.json` (`{"own_facts": ["$0.01"]}`), so the gate accepts them without a source. Then type `/outbound-gates:setup` in that project to install the safety net that holds when the plugin isn't loaded: deny rules for send tools, a guard and a watchdog. A person runs it; macOS and Linux only.
 
 ## Adapting it
 
-1. Copy `gates/config.example.json` and set your registers, banned phrases and bold allow list.
-2. Put your own product's facts in `own_facts` and in `docs/capabilities.md`.
+1. Set your writing style in `<project>/.gates/style.json`: registers, sign-offs, banned phrases, bold patterns (see "Truth rules and style").
+2. Put your own product's facts in `own_facts` in `~/.config/outbound-gates/config.json`, and in `docs/capabilities.md`.
 3. Rewrite the arms in `skills/qualify` for how your buyers differ.
 4. Map the statuses and keywords in `docs/crm-model.md` onto your CRM, and build the export described in `docs/crm-adapter.md`.
 
@@ -190,7 +212,7 @@ The tests cover both gates, the demo's outcome for every account, the walkthroug
 
 ## Releasing
 
-Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.5.1 && git push origin outbound-gates--v0.5.1`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
+Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.6.0 && git push origin outbound-gates--v0.6.0`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
 
 ## Known limits
 

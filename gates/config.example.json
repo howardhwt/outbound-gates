@@ -1,23 +1,19 @@
 {
+  "_comment": "Default rules for the send gate: truth and safety. Numbers need sources (claims), no statements about what the reader pays (cost_assertion_patterns), a few cliches banned, and a wide length band. House style (sign-off, a fixed closing line, a tighter length, bold and hyphen rules) is opt-in: setup --style example, or your own .gates/style.json. See docs/send-gate.md.",
   "registers": {
     "cold": {
       "words": [
-        80,
-        150
-      ],
-      "sign_off": "Thanks,",
-      "required_close": "If this isn't relevant, a one-line no is fine."
+        20,
+        300
+      ]
     },
     "follow_up": {
       "words": [
-        40,
-        80
-      ],
-      "sign_off": "Thanks,\nSam"
+        10,
+        200
+      ]
     }
   },
-  "max_spaced_hyphens": 0,
-  "min_contractions": 2,
   "banned_phrases": [
     "I hope this finds you well",
     "I wanted to reach out",
@@ -26,19 +22,13 @@
     "circle back",
     "just checking in"
   ],
-  "bold_allowed_patterns": [
-    "Acme Transcribe",
-    "\\$\\d+(?:\\.\\d+)?"
-  ],
   "cost_assertion_patterns": [
     "you(?:'re| are) paying",
     "you pay",
     "it costs you",
     "your cost is"
   ],
-  "own_facts": [
-    "$0.002"
-  ],
+  "own_facts": [],
   "claim_max_age_days": 14,
   "hubspot": {
     "_comment": "Optional. Used only by python -m gates.hubspot. Leave a property null to derive it from logged emails or skip it; the adapter warns which check that weakens.",
