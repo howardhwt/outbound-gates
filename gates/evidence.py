@@ -126,8 +126,8 @@ def load_settings(
     A project may set register, sender_owner, max_unanswered, crm_source,
     crm_path, hubspot (the field mapping) and example_pages. It may only add to
     blocked_tools and banned_phrases.
-    source_allowlist comes only from the user's own config file, outside the
-    project the agent writes to.
+    source_allowlist and extra own_facts come only from the user's own config
+    file, outside the project the agent writes to.
     """
     plugin_root, project_dir = Path(plugin_root), Path(project_dir)
     defaults = _load_json(plugin_root / "gates" / "hook.config.json", "gate settings")
@@ -142,6 +142,12 @@ def load_settings(
 
     rules = dict(rules)
     rules["banned_phrases"] = _union(rules.get("banned_phrases", []), project.get("banned_phrases", []))
+    # Your own facts pass without a source, so they come only from your own config,
+    # outside the project folder the agent writes to, and only add to the plugin's list.
+    user_facts = user.get("own_facts", [])
+    if not isinstance(user_facts, list) or not all(isinstance(v, str) for v in user_facts):
+        raise UsageError(f"own_facts in {user_file} must be a list of strings, e.g. [\"$0.01\"]")
+    rules["own_facts"] = _union(rules.get("own_facts", []), user_facts)
     settings = {
         "rules": rules,
         "register": project.get("register", defaults.get("register", "cold")),
