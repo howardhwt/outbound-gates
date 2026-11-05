@@ -118,27 +118,9 @@ def _draft_from_input(tool_input: dict, crm_bcc: tuple[str, ...] | list[str] = (
 
 
 def _deny_reason(verdict, gates_home: Path, contact: str) -> str:
-    from gates.evidence import calc_command, draft_dir, record_command
+    from gates.evaluate import refusal_text
 
-    fails = [f for f in verdict.findings if f.severity == "fail"]
-    lines = [f"{len(fails)} problem(s) with this draft:"]
-    lines += [f"- {f.rule}: {f.message}" for f in fails]
-    if any(f.rule in ("claims", "claims_unverified") for f in fails):
-        lines.append(
-            "To source a number, record the exact sentence from the company's own site "
-            "(replace URL, QUOTE and VALUE):"
-        )
-        lines.append(record_command(gates_home, contact))
-        lines.append("For a number you worked out from sourced numbers (a saving, a ratio), record the "
-                     "calculation; the gate recomputes it from the verified sources (unit constants only, "
-                     "within 2%):")
-        lines.append(calc_command(gates_home, contact))
-        lines.append(f"Claims folder read: {draft_dir(gates_home, contact) / 'claims'}")
-    warns = [f for f in verdict.findings if f.rule == "crm_coverage"]
-    if warns:
-        lines.append("CRM warnings:")
-        lines += [f"- {f.message}" for f in warns]
-    return "\n".join(lines)
+    return refusal_text(verdict, gates_home, contact)
 
 
 def _log(gates_home: Path, entry: dict) -> None:

@@ -1,0 +1,19 @@
+{
+  "companies": [
+    {
+      "domain": "quickstart-co.example",
+      "alt_domains": [],
+      "name": "Quickstart Co",
+      "status": "NEW",
+      "lane": "transcribe",
+      "segment": "reseller",
+      "date_contacted": null,
+      "date_replied": null,
+      "notes": [
+        {"date": "2026-11-01", "text": "SOURCED: resells transcription by the minute. https://quickstart-co.example/pricing"}
+      ],
+      "tasks": [],
+      "deals": []
+    }
+  ]
+}

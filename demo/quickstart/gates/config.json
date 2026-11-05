@@ -1,0 +1,5 @@
+{
+  "_comment": "Quickstart project settings. python -m gates.quickstart copies this folder and renames gates/ to .gates/. The CRM is a local file, and pages for .example domains are served from pages/, so nothing goes over the network.",
+  "crm_path": "crm.json",
+  "example_pages": "pages"
+}

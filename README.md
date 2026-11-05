@@ -14,7 +14,9 @@ Everything here uses a fictional product, **Acme Transcribe**, a speech-to-text 
 
 ## Try it in one minute
 
-Python 3.9 or newer. No packages to install.
+**Just the send gate, in two minutes:** type `/outbound-gates:try` in Claude Code, or follow `docs/quickstart.md`. A tiny bundled project shows a draft blocked for an unsourced number, the source recorded, and the same draft passing. The same doc then walks through setting it up on your own outbound folder.
+
+**The whole pipeline:** Python 3.9 or newer. No packages to install.
 
 ```
 git clone <this repo> && cd outbound-gates
@@ -98,6 +100,8 @@ Each step writes to the CRM before the next one starts. `examples/walkthrough/` 
 python -m gates examples/draft_pass.txt \
   --config demo/rules.json --register cold --claims examples/claims.json
 ```
+
+To run the whole send gate on a draft (rules, sources, calculations and the pre-send check against the project's CRM), the same check the Gmail hook runs: `python -m gates.evaluate draft.txt --project DIR --to name@company.com [--subject "..."]`. It exits 0 on a pass, 1 on a block (printing the commands that fix a missing source) and 2 on bad input.
 
 `demo/rules.json` is the full rule set the demo uses. To check a draft against the rules the send gate uses in one of your projects (the plugin's truth rules, that project's style and your own facts), pass the folder instead: `--project DIR`. The register then defaults to the project's.
 
@@ -188,7 +192,7 @@ Or load it for one session from a release, without adding a marketplace:
 claude --plugin-url https://github.com/howardhwt/outbound-gates/releases/latest/download/outbound-gates.zip
 ```
 
-Four skills load: `source`, `qualify`, `draft` and `presend-check`. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
+Six skills load: `source`, `qualify`, `draft` and `presend-check` for the work, `setup` for the safety net, and `try` for the two-minute demo. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
 
 The skills check drafts with `--project`, so they use the same rules as the send gate: the plugin's truth rules plus your project's style (see "Truth rules and style").
 
@@ -212,7 +216,7 @@ The tests cover both gates, the demo's outcome for every account, the walkthroug
 
 ## Releasing
 
-Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.6.1 && git push origin outbound-gates--v0.6.1`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
+Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.7.0 && git push origin outbound-gates--v0.7.0`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
 
 ## Known limits
 
