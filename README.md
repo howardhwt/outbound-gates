@@ -115,7 +115,7 @@ Curly quotes and Windows line endings are flattened before the rules run, so a d
 | `claims` | A number in the draft with no sourced claim behind it, or a claim with no URL |
 | `rhythm` | Warns on few contractions or three same-length sentences in a row |
 
-The `claims` rule matters most. Every number in an email must appear in that draft's claim file with a URL and the date it was checked. A claim older than the configured age produces a warning. Numbers you derive from a sourced value, such as a margin, are listed under that claim's `derived` field.
+The `claims` rule matters most. Every number in an email must appear in that draft's claim file with a URL and the date it was checked. A claim older than the configured age produces a warning. Numbers you derive from a sourced value, such as a margin, are listed under that claim's `derived` field. The send gate ignores `derived` values: there, a worked-out number needs a recorded calculation the gate recomputes itself (`python -m gates.evidence calc`, see `docs/send-gate.md`).
 
 Clock times, calendar dates and anything inside a URL are not treated as claims. A year is. Set `number_ignore_patterns` in the config to change what is skipped.
 
@@ -194,7 +194,7 @@ The tests cover both gates, the demo's outcome for every account, the walkthroug
 - A number written in a different unit from its claim, such as 0.6 cents for $0.006, is not matched. List it under the claim's `derived` field.
 - The pre-send check sees promises and replies only when they are recorded in the CRM. Reading earlier emails for tone and repeated openings still needs a person or an agent.
 - The funnel groups by segment. Add your own grouping if you run more than one lane.
-- The send gate is wave 1: Claude Code only, a CRM file export (no live HubSpot yet), first-touch drafts only, and computed numbers are blocked unless the figure itself is sourced. It stops an agent that cuts corners, not a determined agent running as you on your own machine. See `docs/send-gate.md`.
+- The send gate is wave 1: Claude Code only, a CRM file export (no live HubSpot yet), first-touch drafts only, and a computed number passes only through a recorded calculation over verified sources and your own facts, recomputed by the gate (unit constants only, within 2%). It stops an agent that cuts corners, not a determined agent running as you on your own machine. See `docs/send-gate.md`.
 
 ## License
 

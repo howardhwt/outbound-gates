@@ -112,13 +112,43 @@ def _fingerprint(
     return hashlib.sha256(blob).hexdigest()
 
 
+def _with_checked_maths(contact: str, rules: dict, claims: list, verified: list, gates_home: Path):
+    """Recompute each stored calculation from the verified claims and own facts.
+
+    A calculation that still holds becomes one more verified claim for its shown
+    number, so the claims check treats it like a sourced number. One that no
+    longer holds is a warning with the reason; its number then has no source and
+    the claims check fails the draft if the number is used.
+    """
+    calcs = evidence.calcs_for(gates_home, contact)
+    if not calcs:
+        return [], claims, verified
+    from .checker import normalise_number
+
+    values = {normalise_number(str(claims[i].get("value", ""))) for i in verified}
+    own = {normalise_number(v) for v in rules.get("own_facts", [])}
+    claims, verified, findings = list(claims), list(verified), []
+    for calc in calcs:
+        reason = evidence.check_calc(calc, values, own)
+        label = f"{calc.get('show')} = {calc.get('formula')}"
+        if reason:
+            findings.append(Finding("calc", WARN, f"calculation {label!r} doesn't hold: {reason}"))
+            continue
+        verified.append(len(claims))
+        claims.append({"claim": f"calculation: {label}", "value": str(calc.get("show")),
+                       "url": "calc:" + str(calc.get("formula")), "calc": calc})
+    return findings, claims, verified
+
+
 def evaluate(draft: Draft, crm: dict, settings: dict, *, gates_home: Path, today: date,
              crm_warnings: Sequence[str] = ()) -> Verdict:
     rules, register = settings["rules"], settings["register"]
     claims = evidence.claims_for(gates_home, draft.recipient)
     verified = [i for i, claim in enumerate(claims) if evidence.verify_claim(claim, gates_home)]
+    sourced_claims = len(claims)
+    calc_findings, claims, verified = _with_checked_maths(draft.recipient, rules, claims, verified, gates_home)
 
-    findings: list[Finding] = []
+    findings: list[Finding] = list(calc_findings)
     if not draft.bodies:
         findings.append(Finding("body", FAIL, "the draft has no body"))
     for label, text in draft.bodies:
@@ -140,6 +170,6 @@ def evaluate(draft: Draft, crm: dict, settings: dict, *, gates_home: Path, today
         findings=tuple(findings),
         inputs_sha256=_fingerprint(draft, crm, settings, today, claims, gates_home),
         crm_path=str(crm_path) if crm_path else None,
-        claims_used=len(claims),
+        claims_used=sourced_claims,
         verified_claims=len(verified),
     )

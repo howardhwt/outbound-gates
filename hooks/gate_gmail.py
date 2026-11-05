@@ -114,7 +114,7 @@ def _draft_from_input(tool_input: dict):
 
 
 def _deny_reason(verdict, gates_home: Path, contact: str) -> str:
-    from gates.evidence import draft_dir, record_command
+    from gates.evidence import calc_command, draft_dir, record_command
 
     fails = [f for f in verdict.findings if f.severity == "fail"]
     lines = [f"{len(fails)} problem(s) with this draft:"]
@@ -125,6 +125,10 @@ def _deny_reason(verdict, gates_home: Path, contact: str) -> str:
             "(replace URL, QUOTE and VALUE):"
         )
         lines.append(record_command(gates_home, contact))
+        lines.append("For a number you worked out from sourced numbers (a saving, a ratio), record the "
+                     "calculation; the gate recomputes it from the verified sources (unit constants only, "
+                     "within 2%):")
+        lines.append(calc_command(gates_home, contact))
         lines.append(f"Claims folder read: {draft_dir(gates_home, contact) / 'claims'}")
     warns = [f for f in verdict.findings if f.rule == "crm_coverage"]
     if warns:

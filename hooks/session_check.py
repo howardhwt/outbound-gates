@@ -394,8 +394,8 @@ def bash_refusal(command: str, project: Path) -> str:
         return "it looks like a mail command (sendmail, mail, smtplib, osascript Mail)"
     if NETWORK_SEND.search(command):
         return "it sends data over the network (curl/wget with data or POST/PUT, requests.post)"
-    if "gates.evidence record" in command and not re.search(r"\brm\b|\bmv\b|>", command):
-        return ""  # the gate's own command for recording a source
+    if re.search(r"gates\.evidence (?:record|calc)\b", command) and not re.search(r"\brm\b|\bmv\b|>", command):
+        return ""  # the gate's own commands for recording a source or a calculation
     if any(t in command for t in _protected_tokens(project)) and MUTATES.search(command):
         return "it may change or delete the send gate's own files or settings"
     return ""

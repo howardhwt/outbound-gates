@@ -17,7 +17,7 @@ A draft passes when:
 
 - it has exactly one recipient (to, cc and bcc together), and only fields the gate checks: `to`, `cc`, `bcc`, `subject`, `body`, `htmlBody`, `includeSignature`. Attachments and replies (`replyToMessageId`) are refused, and so is any field the gate doesn't know.
 - the body and the HTML body (as text) each pass every rule in `gates/config.example.json`, and the subject passes the rules that make sense for a subject line.
-- every number has a **verified source**, apart from your own facts (`own_facts`). Computed numbers, such as a margin worked out from a price, are not allowed in gated drafts unless that figure itself is sourced.
+- every number has a **verified source**, apart from your own facts (`own_facts`). A number worked out from sourced numbers, such as a saving, passes only through a recorded **calculation** that the gate recomputes itself (see "Recording a calculation").
 - the pre-send check passes against your CRM file: the company is known, not disqualified, not already contacted, and so on.
 
 ## Recording a source
@@ -36,6 +36,27 @@ The command fetches `URL` itself and records the claim only if:
 - `VALUE` is one of the numbers in the quote ("$1,200" and "1,200" are the same number; "4" is not in "40%").
 
 It stores the page text in `.gates/evidence/` and the claim in `.gates/drafts/<domain>/<contact>/claims/`, then exits 0. A refusal says why and exits 1; bad input exits 2.
+
+## Recording a calculation
+
+For a number the email works out, such as "about 67% less" from their sourced price and your own price, record the calculation. The gate never trusts the shown number on its own:
+
+```
+PYTHONPATH=<plugin> python3 -m gates.evidence calc --gates-home <project>/.gates \
+  --contact dana@northwind-audio.example --formula '(theirs - ours) / theirs * 100' \
+  --input theirs=0.006 --input ours=own:0.002 --show '67%'
+```
+
+The calculation is recorded only if:
+
+- the formula uses only `+ - * /`, parentheses, the input names, and unit constants (60, 24, 7, 30, 365, 100, 1000, 3600). That allows "per second vs per minute" and percentages, but not a made-up multiplier like `theirs * 0 + 70`. No functions, no powers, nothing else.
+- every input is used, and at least one is a sourced claim, so your own facts alone can't produce a number.
+- each `NAME=VALUE` input matches a claim with a **verified** stored source for this contact, and each `NAME=own:VALUE` input matches one of your `own_facts`.
+- the shown number is within 2% of the result. The gate never rounds further in your favour. A shown percentage is compared with the formula's result, so the formula supplies the `* 100`.
+
+It stores the calculation in `.gates/drafts/<domain>/<contact>/calcs/`. **Every time it checks a draft, the gate recomputes each calculation from the claims that verify right now.** If a source stops verifying (for example, the stored page was edited), the calculation fails with the reason, and its number has no source again. The formula is parsed and walked, never passed to `eval()`. In strict mode the `calc` command is allowed, like `record`.
+
+What the gate can't judge is whether the formula is the *right* comparison, for example comparing a per-minute price with a per-hour one. The unit constants make honest conversions possible; reading the email still catches a misleading one.
 
 ## Setting it up
 
