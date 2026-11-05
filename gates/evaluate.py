@@ -185,3 +185,84 @@ def evaluate(draft: Draft, crm: dict, settings: dict, *, gates_home: Path, today
         verified_claims=len(verified),
         register=register,
     )
+
+
+def refusal_text(verdict: "Verdict", gates_home: Path, contact: str) -> str:
+    """Why a draft was refused, with the commands that fix a missing source.
+    The hook and the command line both print this."""
+    from .evidence import calc_command, draft_dir, record_command
+
+    fails = [f for f in verdict.findings if f.severity == "fail"]
+    lines = [f"{len(fails)} problem(s) with this draft:"]
+    lines += [f"- {f.rule}: {f.message}" for f in fails]
+    if any(f.rule in ("claims", "claims_unverified") for f in fails):
+        lines.append(
+            "To source a number, record the exact sentence from the company's own site "
+            "(replace URL, QUOTE and VALUE):"
+        )
+        lines.append(record_command(gates_home, contact))
+        lines.append("For a number you worked out from sourced numbers (a saving, a ratio), record the "
+                     "calculation; the gate recomputes it from the verified sources (unit constants only, "
+                     "within 2%):")
+        lines.append(calc_command(gates_home, contact))
+        lines.append(f"Claims folder read: {draft_dir(gates_home, contact) / 'claims'}")
+    warns = [f for f in verdict.findings if f.rule == "crm_coverage"]
+    if warns:
+        lines.append("CRM warnings:")
+        lines += [f"- {f.message}" for f in warns]
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the whole send gate on a draft file, as the hook would on a Gmail draft."""
+    import argparse
+    import sys
+
+    from .checker import UsageError
+
+    parser = argparse.ArgumentParser(description="Run the send gate on one draft: the same check the hook runs.")
+    parser.add_argument("draft", help="the email body, as a text file")
+    parser.add_argument("--to", required=True, help="the one recipient's address")
+    parser.add_argument("--subject", default="", help="the subject line (default: none)")
+    parser.add_argument("--project", default=".", help="the project folder with .gates/ (default: here)")
+    parser.add_argument("--user-config", help="your config file (default: ~/.config/outbound-gates/config.json)")
+    parser.add_argument("--today", help="the date to check against, YYYY-MM-DD (default: today)")
+    args = parser.parse_args(argv)
+
+    project = Path(args.project).expanduser().resolve()
+    gates_home = project / ".gates"
+    try:
+        if not gates_home.is_dir():
+            raise UsageError(f"no .gates folder in {project}: run setup there, or pass --project")
+        try:
+            text = Path(args.draft).read_text(encoding="utf-8")
+        except OSError as err:
+            raise UsageError(f"cannot read the draft: {err}") from None
+        try:
+            today = date.fromisoformat(args.today) if args.today else date.today()
+        except ValueError:
+            raise UsageError(f"--today must be YYYY-MM-DD, got {args.today!r}") from None
+        settings = evidence.load_settings(evidence.PLUGIN_ROOT, project, user_config=args.user_config)
+        draft = Draft(args.to.strip(), args.subject, (("body", text),))
+        evidence.contact_parts(draft.recipient)
+        crm, warnings = evidence.read_crm(settings, draft.recipient)
+        verdict = evaluate(draft, crm, settings, gates_home=gates_home, today=today, crm_warnings=warnings)
+    except (UsageError, evidence.EvidenceError, ValueError, OSError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 2
+    print(f"style: {settings['style_source']}; register: {verdict.register}")
+    if not verdict.passed:
+        print(refusal_text(verdict, gates_home, draft.recipient))
+        print("BLOCKED")
+        return 1
+    for finding in verdict.findings:
+        if finding.severity != "fail" and finding.rule != "crm_coverage":
+            print(finding)
+    for warning in warnings:
+        print(f"[WARN] crm: {warning}")
+    print("PASS")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

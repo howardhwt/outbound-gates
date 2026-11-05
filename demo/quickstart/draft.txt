@@ -1,0 +1,8 @@
+Hi Dana,
+
+Your pricing page lists transcription at $0.006 per audio minute. We run a speech-to-text API built for resellers, and our rate sits below that.
+
+Would it help to compare the two on a sample of your own audio?
+
+Thanks,
+Sam
