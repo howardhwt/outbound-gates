@@ -75,6 +75,19 @@ Strict mode is opt-in per project. Add `--strict` to the setup command, both the
 
 The selftest runs sample calls through the strict guard. These checks match patterns, so an obfuscated command (an encoded script, a renamed binary) can still get through. Strict mode raises the bar; containment still needs the send service.
 
+**Live check, 2026-11-04 (strict mode on a real outbound folder, selftest 26/26).** Every probe was harmless even if the guard had let it through:
+
+| Probe | Result |
+|---|---|
+| HubSpot `get_user_details` (read) | ran |
+| Google Calendar `delete_event` with a made-up id | refused before the call, naming the exact `allow.json` entry |
+| `curl -X POST https://gate-probe.invalid -d x=1` | refused ("sends data over the network") |
+| `curl -sI https://example.com` | ran |
+| Write `.gates/probe.txt` | refused ("one of the send gate's own files") |
+| Write and delete a normal project file | worked |
+
+Commands a person types with `!` don't go through these hooks: the same `curl -X POST` typed with `!` went straight to the shell. So the guard only limits the agent, and setup can be re-run with `!` in a strict project.
+
 Setup is a speed bump, not a lock: the agent never runs `--yes` or `--uninstall` itself, but an agent running as you could run the printed command or edit the files. The send service planned in `TODOS.md` is what removes that.
 
 ### Is the gate on?
