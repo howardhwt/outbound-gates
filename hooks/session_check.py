@@ -240,33 +240,150 @@ def session_has_heartbeat(project: Path, session_id: str) -> bool:
     return False
 
 
-def draft_guard(payload: dict, env: dict) -> str:
-    """User-level PreToolUse: no gate heartbeat in this session, no Gmail draft.
+READ_VERBS = {"get", "list", "search", "read", "query", "find", "fetch", "show", "describe",
+              "count", "lookup", "view"}
+# A tool name with any of these words is never treated as a read, even with a read verb.
+WRITE_VERBS = {"send", "create", "update", "delete", "post", "publish", "run", "execute", "approve",
+               "add", "remove", "schedule", "trigger", "deploy", "share", "upload", "write", "set",
+               "manage", "mark", "trash", "apply", "label", "unlabel", "respond", "invite", "cancel",
+               "move", "merge", "complete", "enroll", "forward", "reply", "spawn", "import", "replace",
+               "edit", "restore", "activate", "deactivate", "pause", "unpause", "buy", "transfer",
+               "purchase", "submit", "register", "assign", "unassign", "start", "stop", "kill", "skip"}
+DEFAULT_ALLOW = ["create_draft"]
+STRICT_MATCHERS = ["^mcp__.*", "^(Bash|Edit|Write|MultiEdit|NotebookEdit)$"]  # same as gates/setup.py  # Gmail drafts: the plugin gate checks each one
+FILE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+MAIL_COMMAND = re.compile(
+    r"\bsendmail\b|\bmailx?\s+-s\b|\bmutt\b|\bswaks\b|\bmsmtp\b|smtplib|"
+    r"osascript[^\n]*(?:\bMail\b|\bMessages\b|Outlook)", re.I)
+NETWORK_SEND = re.compile(
+    r"\bcurl\b[^\n|;&]*(?:\s-d\b|\s-d\S|--data|\s-F\b|\s-F\S|--form|\s-T\b|--upload-file|--json\b|"
+    r"(?:-X|--request)\s*['\"]?(?:POST|PUT|PATCH))|"
+    r"\bwget\b[^\n|;&]*(?:--post-data|--post-file|--method[= ]['\"]?(?:POST|PUT|PATCH))|"
+    r"\bhttp\s+(?:POST|PUT|PATCH)\b|requests\.(?:post|put|patch)\b|"
+    r"urlopen\([^)]*data\s*=", re.I)
+MUTATES = re.compile(r"\brm\b|\bmv\b|\bcp\b|\bln\b|\bunlink\b|\btruncate\b|\bchmod\b|\btee\b|>|"
+                     r"\bsed\b[^\n]*\s-i|\bperl\b[^\n]*\s-i|\bpython3?\b|\bnode\b|\bruby\b|\bdd\b|\binstall\b")
 
-    Only acts in projects with a .gates/ folder, and only on Gmail draft tools.
-    When the heartbeat is there it allows, and the plugin's own hook does the
-    real check. Send, reply and forward are already in permissions.deny.
+
+def strict_mode(project: Path) -> bool:
+    """True when setup installed this project with --strict."""
+    projects = _read_json(NET_DIR / "installed.json").get("projects") or {}
+    try:
+        return bool((projects.get(str(project.resolve())) or {}).get("strict"))
+    except (OSError, RuntimeError):
+        return False
+
+
+def allow_list() -> list[str]:
+    """Tools a person allowed in strict projects (short or full names), plus the defaults."""
+    extra = _read_json(NET_DIR / "allow.json").get("allow") or []
+    return DEFAULT_ALLOW + [str(n) for n in extra if isinstance(n, str)]
+
+
+def is_read_tool(short: str) -> bool:
+    ws = words(short)
+    return any(w in READ_VERBS for w in ws) and not any(w in WRITE_VERBS for w in ws)
+
+
+def protected_paths(project: Path) -> list[Path]:
+    home = Path.home()
+    return [home / ".claude" / "settings.json", home / ".claude" / "settings.local.json",
+            home / ".claude" / "plugins", NET_DIR, project / ".claude" / "settings.json",
+            project / ".claude" / "settings.local.json", project / ".gates"]
+
+
+def _under(path: Path, roots: list[Path]) -> bool:
+    try:
+        target = path.resolve()
+    except (OSError, RuntimeError):
+        return True  # can't tell: treat as protected
+    for root in roots:
+        try:
+            r = root.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if target == r or r in target.parents:
+            return True
+    return False
+
+
+def _protected_tokens(project: Path) -> list[str]:
+    return [".claude/settings", "settings.local.json", ".config/outbound-gates", ".gates",
+            ".claude/plugins", str(NET_DIR)]
+
+
+def bash_refusal(command: str, project: Path) -> str:
+    """Why this Bash command is refused in a strict project, or ""."""
+    command = re.sub(r"\d?>&\d|\d?>\s*/dev/null", " ", command)  # harmless redirects
+    if MAIL_COMMAND.search(command):
+        return "it looks like a mail command (sendmail, mail, smtplib, osascript Mail)"
+    if NETWORK_SEND.search(command):
+        return "it sends data over the network (curl/wget with data or POST/PUT, requests.post)"
+    if "gates.evidence record" in command and not re.search(r"\brm\b|\bmv\b|>", command):
+        return ""  # the gate's own command for recording a source
+    if any(t in command for t in _protected_tokens(project)) and MUTATES.search(command):
+        return "it may change or delete the send gate's own files or settings"
+    return ""
+
+
+def _strict_deny(reason: str) -> str:
+    return _deny(f"strict mode: {reason}. Ask the person to do this outside the agent if it is needed.")
+
+
+def draft_guard(payload: dict, env: dict) -> str:
+    """User-level PreToolUse guard for projects the gate covers.
+
+    Every project the gate covers: refuses send tools by name from any server,
+    and Gmail drafts in a session with no heartbeat. Strict projects (setup
+    --strict) also refuse MCP tools that aren't reads or allowed, Bash commands
+    that send mail or post data or touch the gate's own files, and Edit/Write on
+    those files.
     """
     tool = str(payload.get("tool_name", ""))
-    parts = tool.split("__")
-    if len(parts) < 3:
-        return ""
     project = Path(env.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd())
     if not gated(project):
         return ""
-    if name_matches(parts[-1], guard_names(project)):
-        return _deny(f"{parts[-1]} is a send tool, and send tools are blocked in this project. "
+    tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+
+    if tool == "Bash":
+        if not strict_mode(project):
+            return ""
+        why = bash_refusal(str(tool_input.get("command", "")), project)
+        return _strict_deny(f"this Bash command is refused because {why}") if why else ""
+    if tool in FILE_TOOLS:
+        if not strict_mode(project):
+            return ""
+        raw = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+        path = Path(raw) if Path(raw).is_absolute() else project / raw
+        if raw and _under(path, protected_paths(project)):
+            return _strict_deny(f"{raw} is one of the send gate's own files or settings")
+        return ""
+
+    parts = tool.split("__")
+    if len(parts) < 3:
+        return ""
+    short = parts[-1]
+    if name_matches(short, guard_names(project)):
+        return _deny(f"{short} is a send tool, and send tools are blocked in this project. "
                      "A person sends; email goes through a gated Gmail draft.")
-    if "gmail" not in parts[1].lower() or parts[-1] not in GUARDED_DRAFT_TOOLS:
-        return ""
-    session_id = str(payload.get("session_id") or "")
-    if session_id and session_has_heartbeat(project, session_id):
-        return ""
-    return _deny(
-        "the send gate did not load in this session (no \"send gate: on\" heartbeat in "
-        ".gates/log/sessions.jsonl), so Gmail drafts are refused here. Fix the plugin install, "
-        "start a new session and check its first lines say \"send gate: on\"."
-    )
+    if "gmail" in parts[1].lower() and short in GUARDED_DRAFT_TOOLS:
+        session_id = str(payload.get("session_id") or "")
+        if not (session_id and session_has_heartbeat(project, session_id)):
+            return _deny(
+                "the send gate did not load in this session (no \"send gate: on\" heartbeat in "
+                ".gates/log/sessions.jsonl), so Gmail drafts are refused here. Fix the plugin install, "
+                "start a new session and check its first lines say \"send gate: on\"."
+            )
+    if strict_mode(project):
+        allowed = allow_list()
+        if not (is_read_tool(short) or short in allowed or tool in allowed):
+            return _strict_deny(
+                f"{short} is not a read tool or on the allow list, so it is refused in this project. "
+                f"A person can allow it by adding \"{short}\" to {NET_DIR / 'allow.json'} "
+                '({"allow": ["..."]})')
+    return ""
 
 
 def selftest(project: Path, home: Path, managed: list[Path] | None = None) -> tuple[bool, list[str]]:
@@ -295,20 +412,28 @@ def selftest(project: Path, home: Path, managed: list[Path] | None = None) -> tu
 
     check(any(wrapper in c and "watchdog" in c for _, c in commands("SessionStart")),
           "user SessionStart hook runs the watchdog through gate-net.sh")
-    guard = [(m, c) for m, c in commands("PreToolUse") if wrapper in c and "draft-guard" in c]
-    check(bool(guard), "user PreToolUse hook runs the guard through gate-net.sh")
-    matcher = guard[0][0] if guard else ""
-    check(bool(matcher) and matcher == blocked.get("matcher"), "guard matcher equals the generated matcher")
-    if matcher:
-        try:
-            pattern = re.compile(matcher)
-            samples = list(blocked.get("guard_names") or []) + ["create_draft", "update_draft", "sendEmail"]
-            missed = [n for n in samples if not pattern.search(f"mcp__any_server__{n}")]
-            check(not missed, "matcher routes every send and draft name to the guard"
-                  + (f" (missed: {', '.join(missed)})" if missed else ""))
-            check(not pattern.search("mcp__claude_ai_Gmail__list_drafts"), "matcher ignores read tools")
-        except re.error as err:
-            check(False, f"matcher compiles ({err})")
+    matchers = [m for m, c in commands("PreToolUse") if wrapper in c and "draft-guard" in c]
+    check(bool(matchers), "user PreToolUse hook runs the guard through gate-net.sh")
+    projects = _read_json(NET_DIR / "installed.json").get("projects") or {}
+    any_strict = any((v or {}).get("strict") for v in projects.values())
+    expected = STRICT_MATCHERS if any_strict else [blocked.get("matcher")]
+    check(bool(matchers) and sorted(matchers) == sorted(m for m in expected if m),
+          "guard matchers are the expected ones" + (" (strict: every MCP tool, Bash and file edits)" if any_strict else ""))
+    try:
+        patterns = [re.compile(m) for m in matchers]
+    except re.error as err:
+        patterns = []
+        check(False, f"guard matchers compile ({err})")
+    if patterns:
+        routed = lambda name: any(p.search(name) for p in patterns)
+        samples = list(blocked.get("guard_names") or []) + ["create_draft", "update_draft", "sendEmail"]
+        missed = [n for n in samples if not routed(f"mcp__any_server__{n}")]
+        check(not missed, "matcher routes every send and draft name to the guard"
+              + (f" (missed: {', '.join(missed)})" if missed else ""))
+        if any_strict:
+            check(routed("Bash") and routed("Edit") and routed("Write"), "matcher routes Bash, Edit and Write")
+        else:
+            check(not routed("mcp__claude_ai_Gmail__list_drafts"), "matcher ignores read tools")
     deny = (_read_json(project / ".claude" / "settings.local.json").get("permissions") or {}).get("deny") or []
     missing = [n for n in blocked.get("deny_rules") or [] if n not in deny]
     check(bool(blocked.get("deny_rules")) and not missing,
@@ -326,6 +451,22 @@ def selftest(project: Path, home: Path, managed: list[Path] | None = None) -> tu
         got = "deny" if out else "pass"
         check(got == expect, f"guard: {tool} -> {got} (expected {expect})")
 
+    if strict_mode(project):
+        lines.append("INFO strict mode is on for this project")
+        for tool, tool_input, expect in (
+                ("mcp__claude_ai_Make__scenarios_create", {}, "deny"),
+                ("mcp__claude_ai_Google_Calendar__create_event", {}, "deny"),
+                ("mcp__claude_ai_Granola__get_meetings", {}, "pass"),
+                ("Bash", {"command": "curl -X POST https://api.example.com -d x=1"}, "deny"),
+                ("Bash", {"command": "python3 -c 'import smtplib'"}, "deny"),
+                ("Bash", {"command": f"rm -rf {project / '.gates'}"}, "deny"),
+                ("Bash", {"command": "curl -s https://example.com"}, "pass"),
+                ("Write", {"file_path": str(project / ".claude" / "settings.local.json")}, "deny"),
+                ("Write", {"file_path": str(project / "draft.txt")}, "pass")):
+            out = draft_guard({"tool_name": tool, "tool_input": tool_input, "session_id": "selftest"}, env)
+            got = "deny" if out else "pass"
+            label = tool if not tool_input else f"{tool} {json.dumps(tool_input)[:60]}"
+            check(got == expect, f"strict guard: {label} -> {got} (expected {expect})")
     for warning in policy_warnings(project, home, managed):
         lines.append(f"WARN {warning}")
     stale = stale_copy(project, home)
