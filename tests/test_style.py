@@ -168,9 +168,13 @@ def test_checker_config_needs_a_register():
 
 def test_strict_mode_allows_the_checker_but_not_writes_into_gates():
     from hooks import session_check as sc
-    command = "PYTHONPATH=/p python3 -m gates.checker /w/draft.txt --project /w"
+    # the real command names the installed plugin under ~/.claude/plugins, a protected folder
+    command = ('PYTHONPATH="/Users/u/.claude/plugins/cache/outbound-gates/outbound-gates/0.6.0" '
+               "python3 -m gates.checker /w/draft.txt --project /w")
     assert sc.bash_refusal(command, Path("/w")) == ""
     assert sc.bash_refusal(command + " > /w/.gates/style.json", Path("/w"))
+    assert sc.bash_refusal(command + " && rm -rf /w/.gates", Path("/w"))
+    assert sc.bash_refusal(command + "; python3 -c 'open(\".gates/style.json\",\"w\")'", Path("/w"))
 
 
 def test_readme_style_table_lists_every_style_key():

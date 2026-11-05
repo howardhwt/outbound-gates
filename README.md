@@ -212,7 +212,7 @@ The tests cover both gates, the demo's outcome for every account, the walkthroug
 
 ## Releasing
 
-Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.6.0 && git push origin outbound-gates--v0.6.0`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
+Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.6.1 && git push origin outbound-gates--v0.6.1`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
 
 ## Known limits
 

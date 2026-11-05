@@ -506,7 +506,8 @@ def describe_install(plan: dict) -> list[str]:
         lines.append(f"  first-run config step skipped: {plan['config']['error']}")
     style_path = plan["project"] / ".gates" / "style.json"
     if plan["style"]["write"]:
-        lines.append(f"  {style_path}: write the {plan['style']['label']} style")
+        label = plan["style"]["label"]
+        lines.append(f"  {style_path}: write " + (f"the {label} style" if label in STYLES else f"the style {label}"))
     elif plan["style"]["error"]:
         lines.append(f"  style step skipped: {plan['style']['error']}")
     elif not style_path.exists():
