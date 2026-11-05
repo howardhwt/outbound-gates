@@ -168,7 +168,8 @@ def apply_user_facts(rules: dict, user: dict, where: Path | str) -> dict:
                          "e.g. [\"H3\", \"1080p\"]")
     rules = dict(rules)
     rules["own_facts"] = _union(rules.get("own_facts", []), user_facts)
-    rules["names"] = _union(rules.get("names", []), names)
+    if names:
+        rules["names"] = _union(rules.get("names", []), names)
     return rules
 
 

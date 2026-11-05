@@ -304,7 +304,7 @@ def test_project_cannot_add_names(tmp_path):
     project = tmp_path / "proj"
     write(project / ".gates" / "config.json", {"names": ["H3"]})
     rules = evidence.load_settings(ROOT, project, user_config=tmp_path / "none.json")["rules"]
-    assert rules["names"] == []
+    assert "names" not in rules
     with pytest.raises(UsageError, match="unknown key"):
         from gates import checker
         checker.validate_style({"names": ["H3"]})
