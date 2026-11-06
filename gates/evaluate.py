@@ -206,11 +206,17 @@ def refusal_text(verdict: "Verdict", gates_home: Path, contact: str) -> str:
                      "within 2%):")
         lines.append(calc_command(gates_home, contact))
         lines.append(f"Claims folder read: {draft_dir(gates_home, contact) / 'claims'}")
-    warns = [f for f in verdict.findings if f.rule == "crm_coverage"]
+    warns = [f.message for f in verdict.findings if f.rule == "crm_coverage"]
     if warns:
-        lines.append("CRM warnings:")
-        lines += [f"- {f.message}" for f in warns]
+        lines.append(crm_summary(warns))
     return "\n".join(lines)
+
+
+def crm_summary(warnings: Sequence[str]) -> str:
+    """One line about what the CRM read couldn't check. The full list goes to the log."""
+    n = len(warnings)
+    return (f"CRM: {n} check{'s' if n != 1 else ''} couldn't run for this contact "
+            "(full list in .gates/log/gate.jsonl)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -258,8 +264,10 @@ def main(argv: list[str] | None = None) -> int:
     for finding in verdict.findings:
         if finding.severity != "fail" and finding.rule != "crm_coverage":
             print(finding)
-    for warning in warnings:
-        print(f"[WARN] crm: {warning}")
+    if warnings:
+        print(crm_summary(warnings))
+        for warning in warnings:
+            print(f"  - {warning}")
     print("PASS")
     return 0
 

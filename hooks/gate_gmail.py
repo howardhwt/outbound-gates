@@ -189,7 +189,7 @@ def decide(raw: str, env: dict, today=None, now=None, *, deadline=None, transpor
         return deny(detail)
 
     from gates.checker import UsageError
-    from gates.evaluate import evaluate
+    from gates.evaluate import crm_summary, evaluate
     from gates.evidence import EvidenceError, contact_parts, load_settings, read_crm
 
     try:
@@ -213,12 +213,13 @@ def decide(raw: str, env: dict, today=None, now=None, *, deadline=None, transpor
     entry["inputs_sha256"] = verdict.inputs_sha256
     entry["register"] = verdict.register
     entry["warnings"] = len(warnings)
+    entry["warning_text"] = list(warnings)  # the full list; the messages show one line
     _log(gates_home, entry)
     if verdict.passed:
         if not warnings:
             return ""
         # No permissionDecision: the call goes ahead as normal, and you see what wasn't checked.
-        return json.dumps({"systemMessage": "send gate: draft passed, with warnings: " + " | ".join(warnings)})
+        return json.dumps({"systemMessage": f"send gate: draft passed. {crm_summary(warnings)}"})
     return deny(_deny_reason(verdict, gates_home, draft.recipient))
 
 

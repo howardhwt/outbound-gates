@@ -244,9 +244,11 @@ def test_hook_allows_with_warnings_shown(project, key):
     record_price(project, fake)
     out = decide(project, fake)
     assert "permissionDecision" not in out
-    assert json.loads(out)["systemMessage"].startswith("send gate: draft passed, with warnings: ")
+    message = json.loads(out)["systemMessage"]
+    assert message.startswith("send gate: draft passed. CRM: ") and "\n" not in message  # one line
     entry = log_lines(project)[-1]
     assert entry["decision"] == "allow" and entry["crm_path"] == "hubspot" and entry["warnings"] >= 1
+    assert len(entry["warning_text"]) == entry["warnings"]  # the full list is in the log
 
 
 def test_hook_refuses_a_disqualified_account(project, key):
@@ -254,7 +256,7 @@ def test_hook_refuses_a_disqualified_account(project, key):
                                                                                    "closed_lost_reason": "no budget"}}])
     record_price(project, fake)
     reason = json.loads(decide(project, fake))["hookSpecificOutput"]["permissionDecisionReason"]
-    assert "no budget" in reason and "CRM warnings:" in reason
+    assert "no budget" in reason and "CRM: " in reason and "couldn't run" in reason
 
 
 def test_hook_refuses_an_unsubscribed_contact(project, key):

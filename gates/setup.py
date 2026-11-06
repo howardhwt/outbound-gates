@@ -50,7 +50,34 @@ from pathlib import Path
 SCHEMA = 1
 STRICT_MCP_MATCHER = "^mcp__.*"
 STRICT_FILE_MATCHER = "^(Bash|Edit|Write|MultiEdit|NotebookEdit)$"
-NET_FILES = ("session_check.py", "gate-net.sh", "blocked.json", "setup.py")
+NET_FILES = ("session_check.py", "gate-net.sh", "blocked.json", "setup.py", "og")
+OG_LAUNCHER = """#!/usr/bin/env python3
+# outbound-gates: the og command, written by setup. It runs gates.og from the newest
+# installed copy of the plugin, so commands in your notes never name a version.
+import re
+import sys
+from pathlib import Path
+
+BAKED = Path(__PLUGIN_ROOT__)
+VERSION = re.compile(r"\\d+\\.\\d+\\.\\d+")
+
+
+def key(path):
+    return tuple(int(x) for x in path.name.split("."))
+
+
+roots = [BAKED]
+if VERSION.fullmatch(BAKED.name) and BAKED.parent.is_dir():
+    roots = [p for p in BAKED.parent.iterdir() if VERSION.fullmatch(p.name)]
+roots = [p for p in roots if (p / "gates" / "og.py").is_file()]
+if not roots:
+    sys.exit(f"og: no outbound-gates plugin with og found at {BAKED}; update the plugin")
+root = max(roots, key=key) if VERSION.fullmatch(roots[0].name) else roots[0]
+sys.path.insert(0, str(root))
+from gates.og import main  # noqa: E402
+
+sys.exit(main())
+"""
 LEGACY_MARKERS = ("session_check.py watchdog", "session_check.py draft-guard")
 DRAFT_NAMES = ["create_draft", "update_draft"]
 
@@ -316,6 +343,7 @@ def _copies(plugin_root: Path, version: str, names: dict) -> dict:
     return {"session_check.py": stamped.encode("utf-8"),
             "gate-net.sh": (plugin_root / "hooks" / "gate-net.sh").read_bytes(),
             "setup.py": Path(__file__).read_bytes(),
+            "og": OG_LAUNCHER.replace("__PLUGIN_ROOT__", repr(str(plugin_root))).encode("utf-8"),
             "blocked.json": (json.dumps(blocked, indent=2) + "\n").encode("utf-8")}
 
 
@@ -482,7 +510,7 @@ def plan_install(project: Path, home: Path, plugin_root: Path, managed: list[Pat
 def describe_install(plan: dict) -> list[str]:
     net = plan["net_dir"]
     lines = [f"Setup plan for {plan['project']} (plugin {plan['version']}):",
-             f"  copy session_check.py, gate-net.sh, blocked.json, setup.py into {net}",
+             f"  copy session_check.py, gate-net.sh, blocked.json, setup.py and the og command into {net}",
              f"  {plan['user_path']}: SessionStart -> gate-net.sh watchdog; PreToolUse -> gate-net.sh draft-guard",
              f"    guard matcher covers {len(plan['names']['guard_names'])} send names plus Gmail drafts, on any server"
              if not plan["any_strict"] else
@@ -524,7 +552,7 @@ def apply_install(plan: dict, stamp: str) -> list[str]:
     net.mkdir(parents=True, exist_ok=True)
     os.chmod(net, 0o700)
     for name, data in plan["copies"].items():
-        atomic_write(net / name, data, 0o700 if name == "gate-net.sh" else 0o600)
+        atomic_write(net / name, data, 0o700 if name in ("gate-net.sh", "og") else 0o600)
 
     changed = []
     matchers = guard_matchers(plan["names"]["matcher"], plan["any_strict"])
