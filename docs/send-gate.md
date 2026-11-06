@@ -136,6 +136,23 @@ The guard has limits. `gate-net.sh` turns a missing `python3`, a missing copy or
 
 After changing the plugin's files, run `claude plugin marketplace update outbound-gates` and `claude plugin update outbound-gates@outbound-gates --scope local`, then start a new session. The installed gate is a copy, so edits to a clone don't reach it until then.
 
+### Day to day: og
+
+Setup installs one command, `~/.config/outbound-gates/og`. It always runs the newest installed copy of the plugin, so notes and scripts never need a version in a path.
+
+| Command | What it does |
+|---|---|
+| `og status` | Gate and safety-net versions, strict mode, style, own facts, names, logging BCC, allowed tools, today's passed and refused drafts, anything waiting for approval, and what to do next. `/outbound-gates:status` runs it. |
+| `og check DRAFT --to ADDR [--subject S]` | The whole gate on a draft file (`gates.evaluate`). |
+| `og record ...`, `og calc ...` | Record a verified source or a calculation, for the project in the current folder. |
+| `og propose CHANGE` | Stage a person-only change: `add-fact`, `add-name`, `add-bcc`, `allow`, `style neutral\|example\|FILE`, `refresh`. Prints what is staged and an approval code. |
+| `og yes CODE` | Apply the staged changes. **The person types this**, as `! ~/.config/outbound-gates/og yes CODE`. In strict mode the guard refuses it from the agent. |
+| `og no` | Drop the staged changes. |
+
+Person-only changes loosen what the agent may do or say, so the agent can only propose them. The code is a hash of exactly what is staged: if anything is added after you read the proposal, the code no longer matches and nothing is applied. Approval is a typed code rather than a Yes/No prompt because in bypass-permissions mode Claude Code approves a hook's prompt without asking (`docs/adr/0001-approval-by-code.md`). Every approval is logged in `setup.log`.
+
+After a plugin update, the session start says the safety net is older than the plugin. Ask the agent to run `og propose refresh`, then type the `og yes` line it prints.
+
 ### Settings
 
 | Setting | Where | Notes |

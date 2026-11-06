@@ -262,7 +262,8 @@ def stale_copy(project: Path, home: Path) -> str:
     if _version_key(newest) <= _version_key(VERSION):
         return ""
     return (f"send gate: the safety-net copy in {NET_DIR} is version {VERSION}, older than the "
-            f"plugin ({newest}). Re-run setup (/outbound-gates:setup) to update it.")
+            f"plugin ({newest}). Ask the agent to run `{NET_DIR / 'og'} propose refresh`, then approve it "
+            "with the og yes command it prints.")
 
 
 def policy_warnings(project: Path, home: Path, managed: list[Path] | None = None) -> list[str]:
@@ -349,6 +350,7 @@ WRITE_VERBS = {"send", "create", "update", "delete", "post", "publish", "run", "
 DEFAULT_ALLOW = ["create_draft"]
 STRICT_MATCHERS = ["^mcp__.*", "^(Bash|Edit|Write|MultiEdit|NotebookEdit)$"]  # same as gates/setup.py  # Gmail drafts: the plugin gate checks each one
 FILE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+OG_YES = re.compile(r"(?:\bog|og\.py|gates\.og)['\"]?\s+yes\b")  # the person's approval, never the agent's
 MAIL_COMMAND = re.compile(
     r"\bsendmail\b|\bmailx?\s+-s\b|\bmutt\b|\bswaks\b|\bmsmtp\b|smtplib|"
     r"osascript[^\n]*(?:\bMail\b|\bMessages\b|Outlook)", re.I)
@@ -412,6 +414,8 @@ def _protected_tokens(project: Path) -> list[str]:
 def bash_refusal(command: str, project: Path) -> str:
     """Why this Bash command is refused in a strict project, or ""."""
     command = re.sub(r"\d?>&\d|\d?>\s*/dev/null", " ", command)  # harmless redirects
+    if OG_YES.search(command):
+        return "only the person approves a proposal, by typing ! og yes CODE themselves"
     if MAIL_COMMAND.search(command):
         return "it looks like a mail command (sendmail, mail, smtplib, osascript Mail)"
     if NETWORK_SEND.search(command):
@@ -495,7 +499,7 @@ def selftest(project: Path, home: Path, managed: list[Path] | None = None) -> tu
         lines.append(f"{'OK  ' if ok else 'FAIL'} {what}")
 
     blocked = _read_json(NET_DIR / "blocked.json")
-    for name in ("session_check.py", "gate-net.sh", "blocked.json", "setup.py"):
+    for name in ("session_check.py", "gate-net.sh", "blocked.json", "setup.py", "og"):
         check((NET_DIR / name).is_file(), f"copy present: {NET_DIR / name}")
     wrapper = str(NET_DIR / "gate-net.sh")
     hooks = _read_json(home / ".claude" / "settings.json").get("hooks") or {}
@@ -558,6 +562,8 @@ def selftest(project: Path, home: Path, managed: list[Path] | None = None) -> tu
                 ("Bash", {"command": "curl -X POST https://api.example.com -d x=1"}, "deny"),
                 ("Bash", {"command": "python3 -c 'import smtplib'"}, "deny"),
                 ("Bash", {"command": f"rm -rf {project / '.gates'}"}, "deny"),
+                ("Bash", {"command": f"{NET_DIR / 'og'} yes 0000"}, "deny"),
+                ("Bash", {"command": f"{NET_DIR / 'og'} status"}, "pass"),
                 ("Bash", {"command": "curl -s https://example.com"}, "pass"),
                 ("Write", {"file_path": str(project / ".claude" / "settings.local.json")}, "deny"),
                 ("Write", {"file_path": str(project / "draft.txt")}, "pass")):

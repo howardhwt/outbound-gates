@@ -192,11 +192,11 @@ Or load it for one session from a release, without adding a marketplace:
 claude --plugin-url https://github.com/howardhwt/outbound-gates/releases/latest/download/outbound-gates.zip
 ```
 
-Six skills load: `source`, `qualify`, `draft` and `presend-check` for the work, `setup` for the safety net, and `try` for the two-minute demo. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
+Seven skills load: `source`, `qualify`, `draft` and `presend-check` for the work, `setup` for the safety net, `status` for where things stand, and `try` for the two-minute demo. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
 
 The skills check drafts with `--project`, so they use the same rules as the send gate: the plugin's truth rules plus your project's style (see "Truth rules and style").
 
-The plugin also installs the send gate hook (`hooks/hooks.json`), which denies Gmail send, reply and forward calls. Install it for your outbound project only, with `--scope project` or `--scope local`. At the default user scope it would block those calls in every project. Setup is in `docs/send-gate.md`. List your own prices in `~/.config/outbound-gates/config.json` (`{"own_facts": ["$0.01"]}`), so the gate accepts them without a source. Then type `/outbound-gates:setup` in that project to install the safety net that holds when the plugin isn't loaded: deny rules for send tools, a guard and a watchdog. A person runs it; macOS and Linux only.
+The plugin also installs the send gate hook (`hooks/hooks.json`), which denies Gmail send, reply and forward calls. Install it for your outbound project only, with `--scope project` or `--scope local`. At the default user scope it would block those calls in every project. Setup is in `docs/send-gate.md`. List your own prices in `~/.config/outbound-gates/config.json` (`{"own_facts": ["$0.01"]}`), so the gate accepts them without a source. Then type `/outbound-gates:setup` in that project to install the safety net that holds when the plugin isn't loaded: deny rules for send tools, a guard and a watchdog. A person runs it; macOS and Linux only. Day to day, `/outbound-gates:status` shows what is on and what to do next, and the agent proposes changes to your facts, allowed tools or style with `og propose`, which you approve by typing the short `! ~/.config/outbound-gates/og yes CODE` it prints (see "Day to day: og" in `docs/send-gate.md`).
 
 ## Adapting it
 
@@ -216,7 +216,7 @@ The tests cover both gates, the demo's outcome for every account, the walkthroug
 
 ## Releasing
 
-Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.7.0 && git push origin outbound-gates--v0.7.0`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
+Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.8.0 && git push origin outbound-gates--v0.8.0`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
 
 ## Known limits
 
