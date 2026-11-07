@@ -43,7 +43,7 @@ def test_the_committed_clip_is_what_the_gate_prints_today():
 def test_the_clip_shows_the_three_steps_in_order(built):
     _, clip, _ = built
     text = re.sub(r"<[^>]+>", "\n", clip.read_text())
-    order = [text.index(s) for s in ("› og check", "has no sourced claim", "BLOCKED", "› og record", "PASS")]
+    order = [text.index(s) for s in ("› gate check", "has no sourced claim", "BLOCKED", "› gate record", "PASS")]
     assert order == sorted(order)
 
 

@@ -8,24 +8,24 @@ description: Show where the send gate stands in this folder and what to do next.
 Run:
 
 ```
-PYTHONPATH="${CLAUDE_SKILL_DIR}/../.." python3 -m gates.og status --project .
+PYTHONPATH="${CLAUDE_SKILL_DIR}/../.." python3 -m gates.gate status --project .
 ```
 
 Show the output as it is, then say the first line under "Next:" in plain words.
 
-If a change is waiting for approval, remind the person that only they can apply it, by typing the `! ~/.config/outbound-gates/og yes CODE` line shown. Never run `og yes` yourself: in strict mode it is refused, and outside strict mode it would defeat the point.
+If a change is waiting for approval, remind the person that only they can apply it, by typing the `! ~/.config/outbound-gates/gate yes CODE` line shown. Never run `gate yes` yourself: in strict mode it is refused, and outside strict mode it would defeat the point.
 
 ## Making a person-only change
 
 Own facts, names, the logging BCC, allowed tools, the project's style and a safety-net refresh change what the agent may do or say, so the agent proposes and the person approves:
 
 ```
-~/.config/outbound-gates/og propose add-fact '$0.02'
-~/.config/outbound-gates/og propose add-name 1440p
-~/.config/outbound-gates/og propose add-bcc 12345@bcc.crm.example
-~/.config/outbound-gates/og propose allow manage_crm_objects
-~/.config/outbound-gates/og propose style neutral|example|FILE
-~/.config/outbound-gates/og propose refresh
+~/.config/outbound-gates/gate propose add-fact '$0.02'
+~/.config/outbound-gates/gate propose add-name 1440p
+~/.config/outbound-gates/gate propose add-bcc 12345@bcc.crm.example
+~/.config/outbound-gates/gate propose allow manage_crm_objects
+~/.config/outbound-gates/gate propose style neutral|example|FILE
+~/.config/outbound-gates/gate propose refresh
 ```
 
-Each prints the staged changes and an approval code. Show the person exactly what was staged and the `! ... og yes CODE` line, then stop. Propose only what the person asked for, or what a refusal shows is needed and the person agrees to.
+Each prints the staged changes and an approval code. Show the person exactly what was staged and the `! ... gate yes CODE` line, then stop. Propose only what the person asked for, or what a refusal shows is needed and the person agrees to.

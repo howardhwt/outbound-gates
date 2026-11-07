@@ -59,7 +59,7 @@ PYTHONPATH="$OG" python3 -m gates.quickstart --prospect name@company.com my-try
 3. **Run setup.** Type `/outbound-gates:setup` in your outbound folder. It previews the plan first, and you apply it yourself. It installs the safety net that holds when the plugin isn't loaded, and writes your project's writing style to `.gates/style.json`: neutral by default, `--style example` for the example house style, or `--style FILE` for your own. See "Truth rules and style" in the README.
 4. **Connect your CRM.** A local export (`--crm-source file --crm-path PATH`) or live HubSpot (`--crm-source hubspot --sender-owner ID`, with a read-only key in `~/.config/outbound-gates/hubspot.key`). See `docs/send-gate.md`.
 5. **Start a new Claude Code session there.** The first line says `send gate: on`. From then on, every Gmail draft the agent creates is checked, and send tools are blocked: a person sends.
-6. **Day to day,** type `/outbound-gates:status` to see where things stand. When a draft needs a new own fact, name or allowed tool, the agent proposes it and prints `! ~/.config/outbound-gates/og yes CODE`; type that to approve. After a plugin update, ask the agent to propose a refresh the same way.
+6. **Day to day,** type `/outbound-gates:status` to see where things stand. When a draft needs a new own fact, name or allowed tool, the agent proposes it and prints `! ~/.config/outbound-gates/gate yes CODE`; type that to approve. After a plugin update, ask the agent to propose a refresh the same way.
 
 To check a draft from the command line at any time:
 
