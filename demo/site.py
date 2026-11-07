@@ -86,7 +86,7 @@ def _key_lines(step: dict) -> list[str]:
 def build_clip(run: dict) -> str:
     rows: list[tuple[str, str]] = []
     for step in run["steps"]:
-        rows.append(("cmd", "$ " + _short_command(step, run)))
+        rows.append(("cmd", "› " + _short_command(step, run)))
         for line in _key_lines(step):
             kind = "bad" if ("BLOCKED" in line or "no sourced" in line) else "ok" if line == "PASS" else "out"
             rows.append((kind, "  " + line))
@@ -109,105 +109,244 @@ def build_clip(run: dict) -> str:
         start = round(4 + 70 * n / max(len(visible) - 1, 1), 2)
         styles.append(f"@keyframes l{i}{{0%,{start}%{{opacity:0}}{min(start + 2, 99)}%,96%{{opacity:1}}100%{{opacity:0}}}}"
                       f".l{i}{{animation:l{i} {cycle}s linear infinite}}")
-    colours = {"cmd": "#e8eef2", "out": "#9fb0ba", "bad": "#ff8a7a", "ok": "#7ee2a8"}
+    # The portfolio's terminal (DESIGN.md, "Terminal"): Ink panel, Hairline edge, commands in Chalk after a Smoke
+    # "›", output in Smoke, the problem and the verdict in Chalk. State is brightness, never red or green.
+    colours = {"cmd": "#EDEDED", "out": "#9B9B9B", "bad": "#EDEDED", "ok": "#EDEDED"}
     for i, (kind, text) in enumerate(wrapped):
         if kind == "gap":
             continue
-        weight = ' font-weight="700"' if kind in ("bad", "ok") else ""
+        weight = ' font-weight="600"' if kind in ("bad", "ok") else ""
         texts.append(f'<text class="l{i}" x="20" y="{top + line_h * i}" fill="{colours[kind]}"{weight}>'
                      f"{escape(text)}</text>")
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
             f'viewBox="0 0 {width} {height}" role="img" aria-label="The send gate blocks a draft for an unsourced '
             f'number, the source is recorded from the company page, and the same draft passes">\n'
-            f"<style>text{{font:14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre}}"
+            f"<style>text{{font:14px 'Geist Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre}}"
             f"{''.join(styles)}</style>\n"
-            f'<rect width="{width}" height="{height}" rx="10" fill="#151b1f"/>\n'
-            f'<circle cx="22" cy="20" r="6" fill="#ff5f57"/><circle cx="42" cy="20" r="6" fill="#febc2e"/>'
-            f'<circle cx="62" cy="20" r="6" fill="#28c840"/>\n'
-            f'<text x="90" y="25" fill="#6c7a83">outbound-gates: a real run on the bundled demo company</text>\n'
+            f'<rect x="0.5" y="0.5" width="{width - 1}" height="{height - 1}" rx="12" fill="#000000" stroke="#313131"/>\n'
+            f'<text x="20" y="28" fill="#9B9B9B" style="font-size:12px">outbound-gates · a real run on the bundled demo company</text>\n'
             + "\n".join(texts) + "\n</svg>\n")
 
 
 # --- the page ----------------------------------------------------------------------------
 
+PORTFOLIO = "https://howardhwt.github.io"
+# The site lives on the portfolio's origin (howardhwt.github.io/outbound-gates), so it loads the portfolio's own
+# stylesheet and nav classes rather than a copy of them: one site, one set of tokens. Only the pieces this page
+# adds (the draft, the steps, the commands) are styled here, and only with the portfolio's tokens.
+NAV = [("/", "Howard Tam"), ("/work/", "Work"), ("/outbound-gates/", "outbound-gates"), (REPO, "GitHub")]
+
 PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>outbound-gates</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>outbound-gates · Howard Tam</title>
 <meta name="description" content="A send gate for AI-written cold email: every number needs a source from the company's own site, and a person sends.">
+<meta property="og:title" content="outbound-gates">
+<meta property="og:description" content="Your agent can't put an unsourced number in a cold email, and it can't send.">
+<meta property="og:url" content="__PORTFOLIO__/outbound-gates/">
+<link rel="canonical" href="__PORTFOLIO__/outbound-gates/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('og-js');</script>
+<link rel="stylesheet" href="/style.css">
 <style>
-:root{--bg:#f6f7f5;--panel:#fff;--fg:#1b2420;--muted:#5c6964;--line:#dce2df;--term:#151b1f;--termfg:#e8eef2;
---bad:#c0392b;--ok:#1e8449;--accent:#2b6cb0}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1417;--panel:#161d21;--fg:#e6ecef;
---muted:#9aa8b0;--line:#26323a;--bad:#ff8a7a;--ok:#7ee2a8;--accent:#7fb3ff}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
-font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-main{max-width:860px;margin:0 auto;padding:40px 16px 64px}
-h1{font-size:30px;margin:0 0 6px}h2{font-size:20px;margin:40px 0 10px}p{margin:8px 0}
-.muted{color:var(--muted)}a{color:var(--accent)}
-.lead{font-size:18px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}
-pre{margin:0;white-space:pre-wrap;word-break:break-word;font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.term{background:var(--term);color:var(--termfg);border-radius:10px;padding:14px 16px;margin:10px 0}
-.term .cmd{color:#e8eef2}.term .out{color:#9fb0ba}
-.mark{background:#fff3c4;color:#1b2420;border-radius:3px;padding:0 2px}
-.step{display:none}.step.shown{display:block}
-.badge{display:inline-block;font-weight:700;border-radius:6px;padding:2px 8px;font-size:13px}
-.badge.bad{background:var(--bad);color:#fff}.badge.ok{background:var(--ok);color:#fff}
-.controls{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
-button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;
-padding:8px 14px;cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-ul{padding-left:20px}code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px}
-</style></head><body><main>
-<h1>outbound-gates</h1>
-<p class="lead">AI-written cold email, without anything untrue in it.</p>
-<p>Outbound goes wrong around the email, not in it: the wrong company, a number nobody checked, the same person
-emailed twice, a CRM that no longer says what happened. These gates hold that line for an agent that drafts in
-your Gmail. <strong>Every number needs a source on the company's own site, and a person sends.</strong></p>
+.og-top{display:grid;gap:64px}
+.og-hero h1{max-width:760px}
+.og-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px;margin-top:24px}
+.og-acts .jump{margin-top:0}
+.og-sec h2{margin-bottom:8px}
+.og-sec>.fine,.og-sec>.og-note{max-width:var(--measure)}
+.og-note{color:var(--muted);text-wrap:pretty}
+.og-catch{display:grid;gap:24px;margin-top:24px;align-items:start}
+.og-draft{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:24px}
+.og-draft .to{font-family:var(--mono);font-size:12px;line-height:16px;color:var(--muted);margin-bottom:16px}
+.og-draft p{color:var(--text-2);max-width:var(--measure)}
+.og-draft p+p{margin-top:12px}
+.og-num{background:var(--text);color:var(--bg);border-radius:3px;padding:0 4px;font-variant-numeric:tabular-nums}
+.og-steps,.og-run{display:grid;gap:24px}
+.og-step .head{display:flex;align-items:center;gap:12px;font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
+.og-step .term{margin:8px 0 0}
+.og-step pre{margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
+.og-step .res{display:block;padding-left:16px;color:var(--muted)}
+.og-step .hit{color:var(--text)}
+.og-step .verdict{color:var(--text);font-weight:500}
+.og-tag{font-family:var(--mono);font-size:12px;line-height:16px;border-radius:3px;padding:2px 6px;border:1px solid var(--muted);color:var(--muted)}
+.og-tag.stop{background:var(--text);border-color:var(--text);color:var(--bg)}
+.og-tag.pass{border-color:var(--text);color:var(--text)}
+.og-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.og-ctl button{font:inherit;font-weight:500;min-height:44px;padding:8px 12px;border-radius:8px;cursor:pointer;
+border:1px solid var(--line);background:transparent;color:var(--text);
+transition:background-color 300ms var(--ease),border-color 300ms var(--ease),transform 500ms var(--ease)}
+.og-ctl button:hover{background:var(--surface);border-color:var(--muted)}
+.og-ctl button.primary{background:var(--text);border-color:var(--text);color:var(--bg)}
+.og-ctl button.primary:hover{background:var(--white)}
+.og-ctl button:active{transform:scale(0.98)}
+.og-ctl button:disabled{opacity:.6;cursor:default;transform:none}
+.og-ctl button:focus-visible,.og-copy:focus-visible{outline:2px solid var(--white);outline-offset:2px}
+.og-ctl{display:none}
+.og-hint{flex-basis:100%;max-width:var(--measure);text-wrap:pretty}
+.og-js .og-ctl{display:flex}
+.og-js .og-step:not(.shown){display:none}
+.og-js .og-step.shown{animation:og-rise 800ms var(--e) both}
+@keyframes og-rise{from{opacity:0;transform:translateY(6px);filter:blur(2px)}}
+.og-try{list-style:none;margin-top:24px}
+.og-try li{display:grid;gap:8px;align-items:start;padding:16px 0;border-top:1px solid var(--line)}
+.og-try li:last-child{border-bottom:1px solid var(--line)}
+.og-try .what{font-weight:500;color:var(--text)}
+.og-try .why{font-size:14px;line-height:20px;color:var(--muted);max-width:var(--measure)}
+.og-try .cmds{display:grid;gap:8px;min-width:0}.og-try li>*{min-width:0}
+.og-cmd{display:flex;min-width:0;max-width:100%;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:4px 4px 4px 12px;
+border:1px solid var(--line);border-radius:8px;background:var(--black);font-family:var(--mono);font-size:14px;line-height:20px}
+.og-cmd code .w{white-space:nowrap}
+.og-cmd code{font:inherit;color:var(--text);min-width:0;padding:8px 0;overflow-wrap:break-word}
+.og-copy{flex:none;position:relative;font-family:var(--mono);font-size:12px;line-height:16px;min-height:36px;padding:0 10px;border-radius:6px;
+border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;transition:color 300ms var(--ease),border-color 300ms var(--ease)}
+.og-copy:hover{color:var(--text);border-color:var(--muted)}
+.og-copy::after{content:"";position:absolute;inset:-4px}
+.og-more summary{list-style:none;cursor:pointer;padding-left:16px;color:var(--muted);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px;min-height:24px}
+.og-more summary::-webkit-details-marker{display:none}.og-more summary:hover{color:var(--text)}
+.og-more summary:focus-visible{outline:2px solid var(--white);outline-offset:2px}
+.og-more[open] summary{margin-bottom:4px}
+.og-try a{color:var(--text);text-underline-offset:4px;text-decoration-color:var(--line)}
+.og-try a:hover{text-decoration-color:var(--text)}
+@media (min-width:768px){h1{font-size:60px}}
+@media (min-width:900px){.og-catch{grid-template-columns:5fr 7fr}.og-draft{position:sticky;top:96px}
+.og-try li{grid-template-columns:4fr 7fr;grid-template-rows:auto 1fr;column-gap:24px;row-gap:4px}.og-try .what,.og-try .why{grid-column:1}.og-try .cmds{grid-column:2;grid-row:1 / span 2;align-self:start}}
+/* From 1100px the catch moves up beside the claim, like the pipeline on the portfolio home. */
+@media (min-width:1100px){.og-top{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;align-items:start}
+.og-hero{position:sticky;top:128px}.og-catch{grid-template-columns:1fr}.og-draft{position:static}.og-watch{display:none}}
+@media (prefers-reduced-motion:reduce){.og-js .og-step.shown{animation:none}.og-ctl button{transition:none}}
+@media print{.og-ctl,.og-copy,.og-more summary{display:none}.og-more>*{display:block}.og-js .og-step:not(.shown){display:block}.og-draft{position:static}}
+</style></head><body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="nav" aria-label="Main">__NAV__</nav>
+<main id="main" class="wrap">
+<div class="og-top">
+<header class="intro og-hero">
+<h1>Your agent can't put an unsourced number in a cold email.</h1>
+<p class="lede">outbound-gates is a Claude Code plugin for agents that draft outbound. Every number in a draft needs
+the exact sentence from the company's own site, a calculation the gate recomputes, or one of your own facts. Send,
+reply and forward are blocked; a person sends.</p>
+<p class="og-acts"><a class="jump ask" href="#try-h">Try it on your prospect ↓</a><a class="jump og-watch" href="#catch-h">Watch it catch a number ↓</a></p>
+</header>
 
-<h2>Watch the gate catch a number</h2>
-<p class="muted">A real run of the gate on the bundled demo company. Nothing below is written by hand: it is the
-gate's own output, rebuilt from the code on every change.</p>
-<div class="panel"><div class="muted" style="font-size:13px">The agent's draft to __TO__</div><pre>__DRAFT__</pre></div>
-<div class="controls"><button class="primary" id="next">Run the next step</button><button id="reset">Start over</button></div>
+<section class="og-sec" aria-labelledby="catch-h">
+<h2 id="catch-h">The gate catches a number</h2>
+<p class="og-note">A real run on the bundled demo company, fictional like every company here. Nothing below is
+written by hand: it is the gate's own output, rebuilt from the code on every change.</p>
+<div class="og-catch">
+<article class="og-draft" aria-label="The agent's draft"><p class="to">Draft to __TO__</p>__DRAFT__</article>
+<div class="og-steps">
+<div class="og-ctl"><button type="button" class="primary" id="og-next">Run the next step</button><button type="button" id="og-reset">Start over</button><span class="fine og-hint">Three steps from one real run.</span></div>
+<div aria-live="polite" class="og-run">
 __STEPS__
-<div class="step panel" id="done"><p><span class="badge ok">PASS</span> The number now rests on the exact sentence from
-the company's own page: <q>__SENTENCE__</q> (<code>__URL__</code>). The gate stored the page with its hash and checks
-it again on every draft.</p></div>
+</div>
+</div>
+</div>
+</section>
+</div>
 
-<h2>Try it</h2>
-<ul>
-<li><strong>On your own prospect, in five minutes:</strong> install the plugin in Claude Code
-(<code>/plugin marketplace add howardhwt/outbound-gates</code>, then <code>/plugin install outbound-gates@outbound-gates</code>)
-and type <code>/outbound-gates:start</code>. It makes a new folder, your agent writes its usual email, and the gate
-refuses any number it can't back up. Nothing goes to Gmail.</li>
-<li><strong>The demo above, on your machine:</strong> <code>/outbound-gates:try</code>.</li>
-<li><strong>The whole pipeline</strong> (source, qualify, draft, gate, pre-send, CRM):
-<a href="pipeline.html">the demo report</a>.</li>
-</ul>
-<p class="muted">Code, docs and the design notes: <a href="__REPO__">github.com/howardhwt/outbound-gates</a>.</p>
+<section class="og-sec" aria-labelledby="try-h">
+<h2 id="try-h">Try it</h2>
+<p class="og-note">In Claude Code. Nothing goes to Gmail until you set it up on your own outbound folder.</p>
+<ol class="og-try">
+<li><span class="what">Install the plugin</span><span class="why">Two commands, once.</span>
+<span class="cmds">__CMD_ADD____CMD_INSTALL__</span></li>
+<li><span class="what">First catch on your prospect</span><span class="why">About five minutes. It makes a new folder,
+your agent writes the email it would normally write, and the gate refuses any number it can't back up until the
+source is recorded.</span><span class="cmds">__CMD_START__</span></li>
+<li><span class="what">The run above, on your machine</span><span class="why">Two minutes, offline, on the bundled demo
+company.</span><span class="cmds">__CMD_TRY__</span></li>
+<li><span class="what">The whole pipeline</span><span class="why">Source, qualify, draft, gate, pre-send and CRM on seven
+demo accounts: <a href="pipeline.html">the demo report</a>. Code, docs and design notes:
+<a href="__REPO__">github.com/howardhwt/outbound-gates</a>.</span></li>
+</ol>
+</section>
 </main>
+<footer class="wrap foot"><span>© 2026 Howard Tam · this page is generated from a real gate run</span>
+<nav aria-label="Elsewhere"><a href="https://www.linkedin.com/in/howardhwt">LinkedIn</a><a href="https://github.com/howardhwt">GitHub</a><a href="__REPO__">outbound-gates repo</a></nav></footer>
 <script>
-var steps=[].slice.call(document.querySelectorAll('.step')),i=0;
-document.getElementById('next').onclick=function(){if(i<steps.length){steps[i].classList.add('shown');
-steps[i].scrollIntoView({behavior:'smooth',block:'nearest'});i++;}};
-document.getElementById('reset').onclick=function(){steps.forEach(function(s){s.classList.remove('shown')});i=0;};
+(function(){
+var steps=[].slice.call(document.querySelectorAll('.og-step')),i=0,next=document.getElementById('og-next');
+function sync(){next.disabled=i>=steps.length;next.textContent=i>=steps.length?'All steps shown':'Run the next step';}
+next.onclick=function(){if(i<steps.length){steps[i].classList.add('shown');
+steps[i].scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});i++;sync();}};
+document.getElementById('og-reset').onclick=function(){steps.forEach(function(s){s.classList.remove('shown')});i=0;sync();next.focus();};
+[].forEach.call(document.querySelectorAll('.og-cmd'),function(row){
+var b=document.createElement('button');b.type='button';b.className='og-copy';b.textContent='copy';
+b.setAttribute('aria-label','Copy: '+row.textContent);
+b.onclick=function(){var t=row.querySelector('code').textContent,done=function(m){b.textContent=m;setTimeout(function(){b.textContent='copy'},2000)};
+(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){done('copied')},function(){done('select it')});};
+row.appendChild(b);});
+sync();
+})();
 </script></body></html>
 """
+
+
+def _render_output(text: str) -> str:
+    """The gate's output, line by line: the problem and the verdict in Chalk, the rest in Smoke.
+
+    The how-to-fix instructions the gate prints after a problem stay on the page, folded under a summary,
+    so the problem and the verdict are what a reader (on a phone especially) sees first."""
+    lines = text.splitlines()
+    first_hit = next((i for i, l in enumerate(lines) if l.startswith("- ")), None)
+    verdict = next((i for i, l in enumerate(lines) if l.strip() in ("BLOCKED", "PASS")), len(lines))
+    fold = [] if first_hit is None else [i for i in range(first_hit + 1, verdict) if not lines[i].startswith("- ")]
+
+    def one(line: str) -> str:
+        if line.strip() in ("BLOCKED", "PASS"):
+            return f'<span class="res verdict">{escape(line.strip())}</span>'
+        cls = "res hit" if line.startswith("- ") else "res"
+        return f'<span class="{cls}">{escape(line)}</span>'
+
+    out = []
+    for i, line in enumerate(lines):
+        if fold and i == fold[0]:
+            out.append(f'<details class="og-more"><summary>How the gate says to fix it ({len(fold)} lines)</summary>'
+                       + "".join(one(lines[j]) for j in fold) + "</details>")
+        if i in fold:
+            continue
+        out.append(one(line))
+    return "".join(out)
+
+
+def _command_row(command: str) -> str:
+    # Each word is unbreakable, so a narrow screen wraps a command only at its spaces, never inside
+    # outbound-gates; the copy button copies the text, spaces and all.
+    words = " ".join(f'<span class="w">{escape(w)}</span>' for w in command.split(" "))
+    return f'<span class="og-cmd"><code>{words}</code></span>'
 
 
 def build_page(run: dict) -> str:
     blocks = []
     for step in run["steps"]:
-        badge = ('<span class="badge bad">BLOCKED</span>' if step["exit"] == 1 else
-                 '<span class="badge ok">PASS</span>' if "PASS" in step["output"] else "")
+        tag = ('<span class="og-tag stop">draft stopped</span>' if step["exit"] == 1 else
+               '<span class="og-tag pass">draft passes</span>' if "PASS" in step["output"] else
+               '<span class="og-tag">source stored</span>')
         blocks.append(
-            f'<div class="step"><p><strong>{escape(step["label"])}</strong> {badge}</p>'
-            f'<div class="term"><pre><span class="cmd">$ {escape(_short_command(step, run))}</span>\n'
-            f'<span class="out">{escape(step["output"])}</span></pre></div></div>')
-    draft = escape(run["draft"]).replace("$0.006", '<span class="mark">$0.006</span>')
-    return (PAGE.replace("__STEPS__", "\n".join(blocks)).replace("__DRAFT__", draft)
-            .replace("__TO__", escape(run["to"])).replace("__SENTENCE__", escape(run["page_sentence"]))
-            .replace("__URL__", escape(run["url"])).replace("__REPO__", REPO))
+            f'<div class="og-step"><p class="head">{escape(step["label"])} {tag}</p>'
+            f'<figure class="term"><pre><span class="cmd">{escape(_short_command(step, run))}</span>'
+            f'{_render_output(step["output"])}</pre></figure></div>')
+    blocks.append(
+        f'<div class="og-step"><p class="og-note">The number now rests on the exact sentence from the company\'s own '
+        f'page: <q>{escape(run["page_sentence"])}</q> (<code>{escape(run["url"])}</code>). The gate stored the page '
+        f'with its hash and checks it again on every draft.</p></div>')
+    paragraphs = [p for p in run["draft"].strip().split("\n\n")]
+    draft = "".join("<p>" + escape(p).replace("\n", "<br>").replace("$0.006", '<span class="og-num">$0.006</span>')
+                    + "</p>" for p in paragraphs)
+    nav = "".join(
+        (f'<a class="brand" href="{href}" aria-label="Howard Tam, home"><span class="long">{text}</span>'
+         f'<span class="short">HT</span></a>') if href == "/" else
+        (f'<a href="{href}" aria-current="page">{text}</a>' if href == "/outbound-gates/" else f'<a href="{href}">{text}</a>')
+        for href, text in NAV)
+    return (PAGE.replace("__STEPS__", "\n".join(blocks)).replace("__DRAFT__", draft).replace("__NAV__", nav)
+            .replace("__TO__", escape(run["to"])).replace("__REPO__", REPO).replace("__PORTFOLIO__", PORTFOLIO)
+            .replace("__CMD_ADD__", _command_row("/plugin marketplace add howardhwt/outbound-gates"))
+            .replace("__CMD_INSTALL__", _command_row("/plugin install outbound-gates@outbound-gates"))
+            .replace("__CMD_START__", _command_row("/outbound-gates:start"))
+            .replace("__CMD_TRY__", _command_row("/outbound-gates:try")))
 
 
 def build_pipeline() -> str:
