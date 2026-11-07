@@ -2,17 +2,25 @@
 
 [![tests](https://github.com/howardhwt/outbound-gates/actions/workflows/test.yml/badge.svg)](https://github.com/howardhwt/outbound-gates/actions/workflows/test.yml)
 
-A small, opinionated system for running AI-assisted outbound without sending anything untrue.
+Outbound goes wrong around the email, not in it: the wrong company, a number nobody checked, the same person emailed twice, a CRM that no longer says what happened. This repo holds the steps around the email (source, qualify, draft, gate, pre-send, log) for an agent that does outbound with you.
 
-A language model writes a plausible cold email in seconds. The hard part is everything around it: finding the right company, proving each fact, not emailing someone twice, and keeping the CRM honest. This repo holds the parts that do that work.
+**The agent can't put an unsourced number in a cold email, and it can't send.** Every number in a draft needs the exact sentence from the company's own site, a calculation the gate recomputes, or one of your own facts. Gmail drafts are checked as the agent creates them; send, reply and forward are blocked; a person sends.
+
+![A real run of the gate: a draft is blocked because $0.006 has no source, the sentence is recorded from the company's pricing page, and the same draft passes](docs/catch.svg)
+
+*A real run on the bundled demo company, regenerated from the code (`python -m demo.site`). Watch it step by step on the [site](https://howardhwt.github.io/outbound-gates/).*
+
+**Try it on your own prospect in five minutes:** install the plugin (below) and type `/outbound-gates:start`. It makes a new folder, your agent writes the cold email it would normally write, and the gate refuses any number it can't back up until the source is recorded. Nothing goes to Gmail.
+
+None of the guardrail tools we looked at (HarnessGuard and GouvernAI for Claude Code, and the AI SDR guardrail guides from Apollo and others) check a draft's numbers against the company's own site when the draft is created.
 
 Everything here uses a fictional product, **Acme Transcribe**, a speech-to-text API priced at $0.002 per audio minute. Every company and domain in the examples is invented. Swap in your own product, prices and rules.
 
+## Try it in one minute
+
 ![The demo run: seven accounts sourced, qualified, drafted and checked; three blocked, two parked or queued, two drafted for a person to send](docs/demo.gif)
 
-*The demo run, abridged: the funnel tables are left out.*
-
-## Try it in one minute
+*The whole pipeline demo, abridged: the funnel tables are left out. [Full report](https://howardhwt.github.io/outbound-gates/pipeline.html).*
 
 **Just the send gate, in two minutes:** type `/outbound-gates:try` in Claude Code, or follow `docs/quickstart.md`. A tiny bundled project shows a draft blocked for an unsourced number, the source recorded, and the same draft passing. The same doc then walks through setting it up on your own outbound folder.
 
@@ -216,7 +224,7 @@ The tests cover both gates, the demo's outcome for every account, the walkthroug
 
 ## Releasing
 
-Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.9.0 && git push origin outbound-gates--v0.9.0`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
+Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.9.1 && git push origin outbound-gates--v0.9.1`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
 
 ## Known limits
 
