@@ -30,6 +30,14 @@ _Avoid_: claim file, citation, evidence row
 A number the draft works out from verified sources and own facts, which the gate recomputes.
 _Avoid_: derived value, maths
 
+**Try folder**:
+A new folder made for a first catch, holding a generated one-company CRM for the tester's prospect that is clearly marked as not their real CRM.
+_Avoid_: no-CRM mode, sandbox, demo project
+
+**First catch**:
+The moment a tester's own agent, writing to the tester's own prospect, is refused for an unsourced number and then passes once the source is recorded.
+_Avoid_: aha moment, demo, onboarding
+
 ### The person's facts
 
 **Own facts**:
@@ -72,3 +80,4 @@ _Avoid_: lockdown, safe mode
 - A number in a draft passes through a **Verified source**, a **Calculation**, or the **Own facts**; **Names** are not numbers
 - An agent turns a **Person-only change** into a **Proposal**; only the person's **Approval code** applies it
 - **Strict mode** is what stops the agent applying a **Proposal** itself
+- A **First catch** happens in a **Try folder**; daily work happens in a project connected to the real CRM

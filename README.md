@@ -192,7 +192,7 @@ Or load it for one session from a release, without adding a marketplace:
 claude --plugin-url https://github.com/howardhwt/outbound-gates/releases/latest/download/outbound-gates.zip
 ```
 
-Seven skills load: `source`, `qualify`, `draft` and `presend-check` for the work, `setup` for the safety net, `status` for where things stand, and `try` for the two-minute demo. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
+Eight skills load: `source`, `qualify`, `draft` and `presend-check` for the work, `setup` for the safety net, `status` for where things stand, `try` for the two-minute demo, and `start` for a first catch on your own prospect. The `draft` and `presend-check` skills call the bundled checker by its installed path, so they work from any folder. Your drafts, claim files and CRM export stay in your own working folder.
 
 The skills check drafts with `--project`, so they use the same rules as the send gate: the plugin's truth rules plus your project's style (see "Truth rules and style").
 
@@ -216,7 +216,7 @@ The tests cover both gates, the demo's outcome for every account, the walkthroug
 
 ## Releasing
 
-Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.8.0 && git push origin outbound-gates--v0.8.0`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
+Bump `version` in `.claude-plugin/plugin.json`, merge, then push a tag named after it, for example `git tag outbound-gates--v0.9.0 && git push origin outbound-gates--v0.9.0`. The `release` workflow checks that the tag matches `plugin.json`, runs the tests on the tagged commit, builds `outbound-gates.zip` from the tag (without `tests/` and `.github/`), and publishes it as the latest release. That zip is what the `--plugin-url` install above downloads.
 
 ## Known limits
 

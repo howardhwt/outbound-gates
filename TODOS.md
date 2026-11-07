@@ -15,6 +15,11 @@ Context: a live check sent a real email because the hook wasn't loaded (docs/sen
   - Design (draft, 2026-11-04): `docs/designs/send-service.md`.
 - **Agent sending (later).** Switched on only through that service.
 
+## First catch (eng review of docs/designs/tester-first-catch.md, 2026-11-06)
+
+- **PR 2: README first screen, clip and GitHub site (P2).** What: README opens with GTM judgement, then "agents can't lie or send here" (use D7's scoped wording: "None of the guardrail tools we looked at…"), a short anonymised clip of a real catch, and a GitHub site where people see the gate work in a browser. Why: hiring managers skim for two minutes and never install (D2, D11). Pros: one story for the README and site, built from real tester runs. Cons: hosting and a clip to keep current; every prospect detail must be replaced (public repo). Context: PR 1 ships /outbound-gates:start; the fictional pipeline demo moves below the fold. Depends on: PR 1 merged and the two-tester assignment's notes.
+- **Guided stage 2 in /outbound-gates:start (P3).** What: after the first catch, walk the tester through connecting their CRM, own facts, the safety net and strict mode via og propose. Why: D14 kept PR 1 to a pointer at /outbound-gates:setup and /status until testers show what they need. Pros: smoother path from try folder to daily use. Cons: built too early it solves the wrong problems. Context: setup, status and og already exist; the start skill ends with a one-line pointer. Depends on: PR 1 and the two-tester notes.
+
 ## Wave 2: send gate
 
 - **MCP server** (`gates/mcp_server.py`, `.mcp.json`). Expose `record_claim` and `evaluate` as MCP tools for Claude Desktop and other MCP clients. Include `notifications/initialized`, `ping`, protocol-version negotiation and unknown-method errors (reviewer concern R3-21). Confirm Claude Code expands `${CLAUDE_PROJECT_DIR}` in a plugin `.mcp.json` env block (R3-4). Deferred in CEO review D2 to keep the first PR small; in wave 1 the agent calls `python -m gates.evidence record` via Bash.
