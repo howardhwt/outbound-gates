@@ -167,6 +167,7 @@ PAGE = """<!doctype html>
 .og-steps,.og-run{display:grid;gap:24px}
 .og-step .head{display:flex;align-items:center;gap:12px;font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
 .og-step .term{margin:8px 0 0}
+.og-after{margin-top:16px;max-width:var(--measure)}
 .og-step pre{margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
 .og-step .res{display:block;padding-left:16px;color:var(--muted)}
 .og-step .hit{color:var(--text)}
@@ -183,18 +184,26 @@ transition:background-color 300ms var(--ease),border-color 300ms var(--ease),tra
 .og-ctl button.primary:hover{background:var(--white)}
 .og-ctl button:active{transform:scale(0.98)}
 .og-ctl button:disabled{opacity:.6;cursor:default;transform:none}
+.og-ctl button[hidden]{display:none}
+.og-step,.og-ctl{scroll-margin:96px 0 24px}
 .og-ctl button:focus-visible,.og-copy:focus-visible{outline:2px solid var(--white);outline-offset:2px}
 .og-ctl{display:none}
 .og-hint{flex-basis:100%;max-width:var(--measure);text-wrap:pretty}
 .og-js .og-ctl{display:flex}
 .og-js .og-step:not(.shown){display:none}
+.og-js .og-step.first{animation:none}
 .og-js .og-step.shown{animation:og-rise 800ms var(--e) both}
 @keyframes og-rise{from{opacity:0;transform:translateY(6px);filter:blur(2px)}}
-.og-try{list-style:none;margin-top:24px}
-.og-try li{display:grid;gap:8px;align-items:start;padding:16px 0;border-top:1px solid var(--line)}
+.og-try{list-style:none;margin-top:24px;counter-reset:og}
+.og-try li{display:grid;gap:8px;align-items:start;padding:16px 0;border-top:1px solid var(--line);counter-increment:og}
+.og-try .what::before{content:counter(og);display:inline-block;min-width:24px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.og-goal .og-cmd{border-color:var(--text)}
+.og-also{margin-top:24px}
+.og-also a{color:var(--text);text-underline-offset:4px;text-decoration-color:var(--line)}
+.og-also a:hover{text-decoration-color:var(--text)}
 .og-try li:last-child{border-bottom:1px solid var(--line)}
 .og-try .what{font-weight:500;color:var(--text)}
-.og-try .why{font-size:14px;line-height:20px;color:var(--muted);max-width:var(--measure)}
+.og-try .why{font-size:14px;line-height:20px;color:var(--muted);max-width:var(--measure);padding-left:24px}
 .og-try .cmds{display:grid;gap:8px;min-width:0}.og-try li>*{min-width:0}
 .og-cmd{display:flex;min-width:0;max-width:100%;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:4px 4px 4px 12px;
 border:1px solid var(--line);border-radius:8px;background:var(--black);font-family:var(--mono);font-size:14px;line-height:20px}
@@ -208,8 +217,6 @@ border:1px solid var(--line);background:transparent;color:var(--muted);cursor:po
 .og-more summary::-webkit-details-marker{display:none}.og-more summary:hover{color:var(--text)}
 .og-more summary:focus-visible{outline:2px solid var(--white);outline-offset:2px}
 .og-more[open] summary{margin-bottom:4px}
-.og-try a{color:var(--text);text-underline-offset:4px;text-decoration-color:var(--line)}
-.og-try a:hover{text-decoration-color:var(--text)}
 @media (min-width:768px){h1{font-size:60px}}
 @media (min-width:900px){.og-catch{grid-template-columns:5fr 7fr}.og-draft{position:sticky;top:96px}
 .og-try li{grid-template-columns:4fr 7fr;grid-template-rows:auto 1fr;column-gap:24px;row-gap:4px}.og-try .what,.og-try .why{grid-column:1}.og-try .cmds{grid-column:2;grid-row:1 / span 2;align-self:start}}
@@ -217,7 +224,7 @@ border:1px solid var(--line);background:transparent;color:var(--muted);cursor:po
 @media (min-width:1100px){.og-top{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;align-items:start}
 .og-hero{position:sticky;top:128px}.og-catch{grid-template-columns:1fr}.og-draft{position:static}.og-watch{display:none}}
 @media (prefers-reduced-motion:reduce){.og-js .og-step.shown{animation:none}.og-ctl button{transition:none}}
-@media print{.og-ctl,.og-copy,.og-more summary{display:none}.og-more>*{display:block}.og-js .og-step:not(.shown){display:block}.og-draft{position:static}}
+@media print{.og-ctl,.og-copy,.og-more summary{display:none}.og-js .og-step:not(.shown){display:block}.og-draft{position:static}}
 </style></head><body>
 <a class="skip" href="#main">Skip to content</a>
 <nav class="nav" aria-label="Main">__NAV__</nav>
@@ -233,34 +240,34 @@ reply and forward are blocked; a person sends.</p>
 
 <section class="og-sec" aria-labelledby="catch-h">
 <h2 id="catch-h">The gate catches a number</h2>
-<p class="og-note">A real run on the bundled demo company, fictional like every company here. Nothing below is
-written by hand: it is the gate's own output, rebuilt from the code on every change.</p>
+<p class="og-note">A real run on the bundled demo company, fictional like every company here. The output below is
+the gate's own, rebuilt from the code on every change. Commands are shown as <code>og</code>, the shortcut setup
+installs.</p>
 <div class="og-catch">
 <article class="og-draft" aria-label="The agent's draft"><p class="to">Draft to __TO__</p>__DRAFT__</article>
 <div class="og-steps">
-<div class="og-ctl"><button type="button" class="primary" id="og-next">Run the next step</button><button type="button" id="og-reset">Start over</button><span class="fine og-hint">Three steps from one real run.</span></div>
 <div aria-live="polite" class="og-run">
 __STEPS__
 </div>
+<div class="og-ctl"><button type="button" class="primary" id="og-next">Record the source →</button><button type="button" id="og-reset">Start over</button><span class="fine og-hint" id="og-hint">Step 1 of 3 from one real run.</span></div>
 </div>
 </div>
+<p class="og-note og-also">The whole pipeline (source, qualify, draft, gate, pre-send and CRM on seven demo accounts):
+<a href="pipeline.html">the demo report</a>. Code, docs and design notes: <a href="__REPO__">github.com/howardhwt/outbound-gates</a>.</p>
 </section>
 </div>
 
 <section class="og-sec" aria-labelledby="try-h">
-<h2 id="try-h">Try it</h2>
+<h2 id="try-h">Try it on your prospect</h2>
 <p class="og-note">In Claude Code. Nothing goes to Gmail until you set it up on your own outbound folder.</p>
 <ol class="og-try">
 <li><span class="what">Install the plugin</span><span class="why">Two commands, once.</span>
 <span class="cmds">__CMD_ADD____CMD_INSTALL__</span></li>
-<li><span class="what">First catch on your prospect</span><span class="why">About five minutes. It makes a new folder,
-your agent writes the email it would normally write, and the gate refuses any number it can't back up until the
-source is recorded.</span><span class="cmds">__CMD_START__</span></li>
-<li><span class="what">The run above, on your machine</span><span class="why">Two minutes, offline, on the bundled demo
-company.</span><span class="cmds">__CMD_TRY__</span></li>
-<li><span class="what">The whole pipeline</span><span class="why">Source, qualify, draft, gate, pre-send and CRM on seven
-demo accounts: <a href="pipeline.html">the demo report</a>. Code, docs and design notes:
-<a href="__REPO__">github.com/howardhwt/outbound-gates</a>.</span></li>
+<li><span class="what">Optional: the run above, on your machine</span><span class="why">Two minutes, offline, on the
+bundled demo company.</span><span class="cmds">__CMD_TRY__</span></li>
+<li class="og-goal"><span class="what">First catch on your prospect</span><span class="why">About five minutes. It makes a
+new folder, your agent writes the email it would normally write, and the gate refuses any number it can't back up
+until the source is recorded.</span><span class="cmds">__CMD_START__</span></li>
 </ol>
 </section>
 </main>
@@ -268,16 +275,23 @@ demo accounts: <a href="pipeline.html">the demo report</a>. Code, docs and desig
 <nav aria-label="Elsewhere"><a href="https://www.linkedin.com/in/howardhwt">LinkedIn</a><a href="https://github.com/howardhwt">GitHub</a><a href="__REPO__">outbound-gates repo</a></nav></footer>
 <script>
 (function(){
-var steps=[].slice.call(document.querySelectorAll('.og-step')),i=0,next=document.getElementById('og-next');
-function sync(){next.disabled=i>=steps.length;next.textContent=i>=steps.length?'All steps shown':'Run the next step';}
-next.onclick=function(){if(i<steps.length){steps[i].classList.add('shown');
-steps[i].scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});i++;sync();}};
-document.getElementById('og-reset').onclick=function(){steps.forEach(function(s){s.classList.remove('shown')});i=0;sync();next.focus();};
+var steps=[].slice.call(document.querySelectorAll('.og-step')),i=1,next=document.getElementById('og-next'),
+reset=document.getElementById('og-reset'),hint=document.getElementById('og-hint'),ctl=next.parentNode;
+function sync(){var done=i>=steps.length;next.hidden=done;reset.disabled=i<=1;
+if(!done)next.textContent=steps[i].getAttribute('data-run')+' →';
+hint.textContent=done?'All three steps from one real run.':'Step '+i+' of 3 from one real run.';}
+next.onclick=function(){if(i<steps.length){steps[i].classList.add('shown');i++;sync();
+var smooth=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+(i>=steps.length?reset:next).focus({preventScroll:true});
+ctl.scrollIntoView({behavior:smooth?'smooth':'auto',block:'nearest'});}};
+reset.onclick=function(){steps.forEach(function(s,n){if(n)s.classList.remove('shown')});i=1;sync();
+steps[0].scrollIntoView({block:'nearest'});next.focus({preventScroll:true});};
+addEventListener('beforeprint',function(){[].forEach.call(document.querySelectorAll('.og-more'),function(d){d.open=true})});
 [].forEach.call(document.querySelectorAll('.og-cmd'),function(row){
 var b=document.createElement('button');b.type='button';b.className='og-copy';b.textContent='copy';
 b.setAttribute('aria-label','Copy: '+row.textContent);
 b.onclick=function(){var t=row.querySelector('code').textContent,done=function(m){b.textContent=m;setTimeout(function(){b.textContent='copy'},2000)};
-(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){done('copied')},function(){done('select it')});};
+(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){done('copied')},function(){done('select the text')});};
 row.appendChild(b);});
 sync();
 })();
@@ -319,20 +333,32 @@ def _command_row(command: str) -> str:
     return f'<span class="og-cmd"><code>{words}</code></span>'
 
 
+UNCHECKED = "our rate sits below that"  # a comparison with no number in the demo draft: the gate lets it through
+
+
+def _after_pass(run: dict) -> str:
+    """What the pass rests on, and what the gate does not check (PRODUCT.md: honest edges)."""
+    if UNCHECKED not in run["draft"]:
+        raise SystemExit(f"the demo draft no longer says {UNCHECKED!r}; update the page's note on what the gate skips")
+    return (f'<p class="og-note og-after">The number now rests on the exact sentence from the company\'s own page: '
+            f'<q>{escape(run["page_sentence"])}</q> (<code>{escape(run["url"])}</code>). The gate stored the page with '
+            f'its hash and checks it again on every draft.</p>'
+            f'<p class="og-note og-after">What it doesn\'t check: <q>{UNCHECKED}</q> has no number in it, so it passes. '
+            f'A comparison like that is yours to check.</p>')
+
+
 def build_page(run: dict) -> str:
     blocks = []
-    for step in run["steps"]:
+    for n, step in enumerate(run["steps"]):
         tag = ('<span class="og-tag stop">draft stopped</span>' if step["exit"] == 1 else
                '<span class="og-tag pass">draft passes</span>' if "PASS" in step["output"] else
                '<span class="og-tag">source stored</span>')
         blocks.append(
-            f'<div class="og-step"><p class="head">{escape(step["label"])} {tag}</p>'
+            f'<div class="og-step{" shown first" if n == 0 else ""}" data-run="{escape(step["label"])}">'
+            f'<p class="head">{escape(step["label"])} {tag}</p>'
             f'<figure class="term"><pre><span class="cmd">{escape(_short_command(step, run))}</span>'
-            f'{_render_output(step["output"])}</pre></figure></div>')
-    blocks.append(
-        f'<div class="og-step"><p class="og-note">The number now rests on the exact sentence from the company\'s own '
-        f'page: <q>{escape(run["page_sentence"])}</q> (<code>{escape(run["url"])}</code>). The gate stored the page '
-        f'with its hash and checks it again on every draft.</p></div>')
+            f'{_render_output(step["output"])}</pre></figure>'
+            + (_after_pass(run) if n == len(run["steps"]) - 1 else "") + '</div>')
     paragraphs = [p for p in run["draft"].strip().split("\n\n")]
     draft = "".join("<p>" + escape(p).replace("\n", "<br>").replace("$0.006", '<span class="og-num">$0.006</span>')
                     + "</p>" for p in paragraphs)

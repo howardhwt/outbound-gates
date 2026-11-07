@@ -82,3 +82,26 @@ def test_the_portfolio_still_has_what_the_page_borrows():
     for href, _ in site.NAV:
         if href.startswith("/") and href != "/outbound-gates/":
             assert (PORTFOLIO_REPO / href.lstrip("/") / "index.html").exists(), href
+
+
+def test_the_catch_is_on_the_page_before_any_click(built):
+    """PRODUCT.md principle 1: BLOCKED is visible without JavaScript doing anything."""
+    out, _, _ = built
+    page = (out / "index.html").read_text()
+    steps = re.split(r'(?=<div class="og-step[ "])', page)[1:]
+    assert 'class="og-step shown first"' in steps[0] and "BLOCKED" in steps[0]
+    assert 'data-run="Record the source"' in page and 'data-run="Check again"' in page
+
+
+def test_the_page_says_what_the_gate_lets_through(built):
+    out, _, _ = built
+    page = (out / "index.html").read_text()
+    assert site.UNCHECKED in page and "What it doesn't check" in page
+
+
+def test_the_page_ends_on_the_first_catch_command(built):
+    """PRODUCT.md principle 2: the last command on the page is /outbound-gates:start."""
+    out, _, _ = built
+    page = (out / "index.html").read_text()
+    commands = re.findall(r'<span class="og-cmd"><code>(.*?)</code>', page)
+    assert re.sub(r"<[^>]+>", "", commands[-1]) == "/outbound-gates:start"
