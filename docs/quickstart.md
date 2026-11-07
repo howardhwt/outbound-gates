@@ -40,7 +40,19 @@ PYTHONPATH="$OG" python3 -m gates.evaluate try-demo/draft.txt --project try-demo
 
 Try changing the draft: write `$0.005`, or add "about 40% less". Each new number is blocked until it has a source or a recorded calculation (see "Recording a calculation" in `docs/send-gate.md`).
 
-## 2. Use it on your own project
+## 2. Try it on your own prospect (five minutes)
+
+Type `/outbound-gates:start` and give one prospect's work email address. It makes a new try folder (it never writes into your current project) with a CRM generated for that one company, marked "TRY: … not your CRM; contact history not checked". Your agent writes the cold email it would normally write, the gate refuses any number without a source, the agent records the exact sentence from the company's own page, and the gate passes it. Nothing goes to Gmail.
+
+It ends with one line: `First catch on <domain>`, or `Finished on the demo company because …` when the page couldn't be read (often a pricing page drawn by JavaScript) or the site is on a different domain from the email. A free-mail address (gmail.com and similar) is refused: the address's domain is the only evidence of who the company is.
+
+To make a try folder yourself:
+
+```sh
+PYTHONPATH="$OG" python3 -m gates.quickstart --prospect name@company.com my-try
+```
+
+## 3. Use it on your own project
 
 1. **Install the plugin for your outbound folder only.** In that folder: `/plugin marketplace add howardhwt/outbound-gates`, then `/plugin install outbound-gates@outbound-gates` and pick the local or project scope. At user scope it would block Gmail sends in every project.
 2. **List your own facts** (your prices and product numbers, which pass without a source) in `~/.config/outbound-gates/config.json`, for example `{"own_facts": ["$0.01"]}`. Names with digits in them, such as a model `H3` or `1080p`, go in `"names"`. Your CRM's logging BCC address, if it has one, goes in `"crm_bcc"`.
