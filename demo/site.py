@@ -9,6 +9,7 @@ exact output into:
 
   _site/index.html      the page that replays the run, step by step
   _site/pipeline.html   the full pipeline demo report (demo/report.py)
+  _site/live.zip        the gate and the demo company, for "Run it live" (demo/live.py, in Pyodide)
   docs/catch.svg        the README clip, an animated terminal of the same run
 
 Local paths are replaced (the plugin folder by $OG, the temporary project by
@@ -131,6 +132,8 @@ def build_clip(run: dict) -> str:
 # --- the page ----------------------------------------------------------------------------
 
 PORTFOLIO = "https://howardhwt.github.io"
+# Pyodide (Python on WebAssembly) runs the real gate in the visitor's browser; loaded only on "Run it live".
+PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/"
 # The site lives on the portfolio's origin (howardhwt.github.io/outbound-gates), so it loads the portfolio's own
 # stylesheet and nav classes rather than a copy of them: one site, one set of tokens. Only the pieces this page
 # adds (the draft, the steps, the commands) are styled here, and only with the portfolio's tokens.
@@ -194,6 +197,16 @@ transition:background-color 300ms var(--ease),border-color 300ms var(--ease),tra
 .og-js .og-step.first{animation:none}
 .og-js .og-step.shown{animation:og-rise 800ms var(--e) both}
 @keyframes og-rise{from{opacity:0;transform:translateY(6px);filter:blur(2px)}}
+.og-live{display:none;margin-top:8px;padding-top:24px;border-top:1px solid var(--line)}
+.og-js .og-live{display:grid;gap:16px}
+.og-js .og-ctl[hidden]{display:none}
+.og-live-run{display:grid;gap:12px}.og-live-run[hidden]{display:none}
+.og-live-label{font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
+#og-live-draft{width:100%;min-height:200px;resize:vertical;padding:16px;border:1px solid var(--line);border-radius:12px;
+background:var(--surface);color:var(--text-2);font:inherit;font-size:16px;line-height:24px}
+#og-live-draft:focus-visible{outline:2px solid var(--white);outline-offset:2px}
+.og-live-out{margin:0}.og-live-out pre{margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
+.og-live-out .og-tag{display:inline-block;margin-bottom:8px}.og-live,.og-live-run>*{min-width:0}.og-live-out:has(pre:empty){display:none}
 .og-try{list-style:none;margin-top:24px;counter-reset:og}
 .og-try li{display:grid;gap:8px;align-items:start;padding:16px 0;border-top:1px solid var(--line);counter-increment:og}
 .og-try .what::before{content:counter(og);display:inline-block;min-width:24px;font-family:var(--mono);font-size:12px;color:var(--muted)}
@@ -224,7 +237,7 @@ border:1px solid var(--line);background:transparent;color:var(--muted);cursor:po
 @media (min-width:1100px){.og-top{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;align-items:start}
 .og-hero{position:sticky;top:128px}.og-catch{grid-template-columns:1fr}.og-draft{position:static}.og-watch{display:none}}
 @media (prefers-reduced-motion:reduce){.og-js .og-step.shown{animation:none}.og-ctl button{transition:none}}
-@media print{.og-ctl,.og-copy,.og-more summary{display:none}.og-js .og-step:not(.shown){display:block}.og-draft{position:static}}
+@media print{.og-live,.og-ctl,.og-copy,.og-more summary{display:none}.og-js .og-step:not(.shown){display:block}.og-draft{position:static}}
 </style></head><body>
 <a class="skip" href="#main">Skip to content</a>
 <nav class="nav" aria-label="Main">__NAV__</nav>
@@ -250,6 +263,18 @@ installs.</p>
 __STEPS__
 </div>
 <div class="og-ctl"><button type="button" class="primary" id="og-next">Record the source →</button><button type="button" id="og-reset">Start over</button><span class="fine og-hint" id="og-hint">Step 1 of 3 from one real run.</span></div>
+<div class="og-live" id="og-live">
+<div class="og-ctl"><button type="button" id="og-live-start">Run it live in your browser</button>
+<span class="fine og-hint" id="og-live-hint">Edit the draft and the real gate checks it, in this page. Loads Python once, about 10 MB.</span></div>
+<div class="og-live-run" id="og-live-run" hidden>
+<label class="og-live-label" for="og-live-draft">The draft. Change the number, delete it, add your own.</label>
+<textarea id="og-live-draft" rows="9" spellcheck="false"></textarea>
+<div class="og-ctl"><button type="button" class="primary" id="og-live-check">Check the draft</button>
+<button type="button" id="og-live-record">Record the source</button>
+<span class="fine og-hint" id="og-live-state">The source isn't recorded yet.</span></div>
+<figure class="term og-live-out"><pre id="og-live-out" aria-live="polite"></pre></figure>
+</div>
+</div>
 </div>
 </div>
 <p class="og-note og-also">The whole pipeline (source, qualify, draft, gate, pre-send and CRM on seven demo accounts):
@@ -286,6 +311,25 @@ var smooth=!matchMedia('(prefers-reduced-motion: reduce)').matches;
 ctl.scrollIntoView({behavior:smooth?'smooth':'auto',block:'nearest'});}};
 reset.onclick=function(){steps.forEach(function(s,n){if(n)s.classList.remove('shown')});i=1;sync();
 steps[0].scrollIntoView({block:'nearest'});next.focus({preventScroll:true});};
+var NL=String.fromCharCode(10),L=function(id){return document.getElementById(id)},py=null,session=null;
+L('og-live-start').onclick=function(){var b=this;b.disabled=true;b.textContent='Loading Python…';
+var t=document.createElement('script');t.src='__PYODIDE__pyodide.js';
+t.onerror=function(){fail("the Python runtime didn’t download")};
+t.onload=function(){loadPyodide({indexURL:'__PYODIDE__'}).then(function(p){py=p;return fetch('live.zip')})
+.then(function(r){if(!r.ok)throw new Error('live.zip: '+r.status);return r.arrayBuffer()})
+.then(function(buf){py.unpackArchive(buf,'zip',{extractDir:'/og'});
+session=py.runPython(["import sys","sys.path.insert(0, '/og')","from demo.live import Session","Session()"].join(NL));
+L('og-live-draft').value=session.draft;L('og-live-run').hidden=false;b.parentNode.hidden=true;L('og-live-draft').focus();})
+.catch(function(e){fail(e.message||String(e))});};document.head.appendChild(t);
+function fail(m){b.disabled=false;b.textContent='Run it live in your browser';
+L('og-live-hint').textContent='Couldn’t start Python here ('+m+'). The replay above is the same gate, run when the page was built.';}};
+function show(r,tag){var out=L('og-live-out');out.textContent='';var h=document.createElement('span');
+h.className='og-tag'+(tag==='draft stopped'?' stop':tag==='draft passes'?' pass':'');h.textContent=tag;
+out.appendChild(h);out.appendChild(document.createTextNode(NL+r.get('output')));r.destroy();}
+L('og-live-check').onclick=function(){var r=session.check(L('og-live-draft').value);
+show(r,r.get('passed')?'draft passes':'draft stopped');};
+L('og-live-record').onclick=function(){var r=session.record(),ok=r.get('recorded');show(r,ok?'source stored':'not recorded');
+if(ok){L('og-live-state').textContent='Source recorded: the pricing page’s own sentence for $0.006.';this.disabled=true;}};
 addEventListener('beforeprint',function(){[].forEach.call(document.querySelectorAll('.og-more'),function(d){d.open=true})});
 [].forEach.call(document.querySelectorAll('.og-cmd'),function(row){
 var b=document.createElement('button');b.type='button';b.className='og-copy';b.textContent='copy';
@@ -373,7 +417,7 @@ def build_page(run: dict) -> str:
                     + "</p>" for p in paragraphs)
     nav = nav_links(current="page")
     return (PAGE.replace("__STEPS__", "\n".join(blocks)).replace("__DRAFT__", draft).replace("__NAV__", nav)
-            .replace("__TO__", escape(run["to"])).replace("__REPO__", REPO).replace("__PORTFOLIO__", PORTFOLIO)
+            .replace("__TO__", escape(run["to"])).replace("__PYODIDE__", PYODIDE).replace("__REPO__", REPO).replace("__PORTFOLIO__", PORTFOLIO)
             .replace("__CMD_ADD__", _command_row("/plugin marketplace add howardhwt/outbound-gates"))
             .replace("__CMD_INSTALL__", _command_row("/plugin install outbound-gates@outbound-gates"))
             .replace("__CMD_START__", _command_row("/outbound-gates:start"))
@@ -392,6 +436,24 @@ def build_pipeline() -> str:
     return build_report(crm, after, records, source_lines, [], nav=nav_links(current="true"))
 
 
+LIVE_FILES = ["gates/*.py", "gates/*.json", "gates/styles/*.json", "demo/__init__.py", "demo/live.py",
+              "demo/quickstart/**/*"]
+
+
+def build_live_bundle() -> bytes:
+    """live.zip: what the browser needs to run demo/live.py. Fixed dates and order, so a rebuild is byte-identical."""
+    import io
+    import zipfile
+    files = sorted({p for pattern in LIVE_FILES for p in ROOT.glob(pattern) if p.is_file() and "__pycache__" not in p.parts})
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for path in files:
+            info = zipfile.ZipInfo(path.relative_to(ROOT).as_posix(), date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(info, path.read_bytes())
+    return buf.getvalue()
+
+
 def build(out: Path, clip: Path | None) -> dict:
     run = run_catch()
     kinds = [(s["kind"], s["exit"]) for s in run["steps"]]
@@ -402,6 +464,7 @@ def build(out: Path, clip: Path | None) -> dict:
     (out / "index.html").write_text(build_page(run), encoding="utf-8")
     (out / "catch.svg").write_text(svg, encoding="utf-8")
     (out / "pipeline.html").write_text(build_pipeline(), encoding="utf-8")
+    (out / "live.zip").write_bytes(build_live_bundle())
     (out / ".nojekyll").write_text("", encoding="utf-8")
     if clip:
         clip.write_text(svg, encoding="utf-8")
