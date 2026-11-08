@@ -66,11 +66,11 @@ def run_catch() -> dict:
 
 
 def _short_command(step: dict, run: dict) -> str:
-    """The og form of each command, as a person would type it."""
+    """The gate form of each command, as a person would type it."""
     if step["kind"] == "record":
-        return (f"og record --contact {run['to']} --url {run['url']} "
+        return (f"gate record --contact {run['to']} --url {run['url']} "
                 f"--quote '{quickstart.QUOTE}' --value '$0.006'")
-    return f"og check draft.txt --to {run['to']}"
+    return f"gate check draft.txt --to {run['to']}"
 
 
 def _key_lines(step: dict) -> list[str]:
@@ -241,7 +241,7 @@ reply and forward are blocked; a person sends.</p>
 <section class="og-sec" aria-labelledby="catch-h">
 <h2 id="catch-h">The gate catches a number</h2>
 <p class="og-note">A real run on the bundled demo company, fictional like every company here. The output below is
-the gate's own, rebuilt from the code on every change. Commands are shown as <code>og</code>, the shortcut setup
+the gate's own, rebuilt from the code on every change. Commands are shown as <code>gate</code>, the shortcut setup
 installs.</p>
 <div class="og-catch">
 <article class="og-draft" aria-label="The agent's draft"><p class="to">Draft to __TO__</p>__DRAFT__</article>

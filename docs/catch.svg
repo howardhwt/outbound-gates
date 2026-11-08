@@ -2,14 +2,14 @@
 <style>text{font:14px 'Geist Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre}@keyframes l0{0%,4.0%{opacity:0}6.0%,96%{opacity:1}100%{opacity:0}}.l0{animation:l0 14.0s linear infinite}@keyframes l1{0%,11.78%{opacity:0}13.78%,96%{opacity:1}100%{opacity:0}}.l1{animation:l1 14.0s linear infinite}@keyframes l2{0%,19.56%{opacity:0}21.56%,96%{opacity:1}100%{opacity:0}}.l2{animation:l2 14.0s linear infinite}@keyframes l4{0%,27.33%{opacity:0}29.33%,96%{opacity:1}100%{opacity:0}}.l4{animation:l4 14.0s linear infinite}@keyframes l5{0%,35.11%{opacity:0}37.11%,96%{opacity:1}100%{opacity:0}}.l5{animation:l5 14.0s linear infinite}@keyframes l6{0%,42.89%{opacity:0}44.89%,96%{opacity:1}100%{opacity:0}}.l6{animation:l6 14.0s linear infinite}@keyframes l7{0%,50.67%{opacity:0}52.67%,96%{opacity:1}100%{opacity:0}}.l7{animation:l7 14.0s linear infinite}@keyframes l8{0%,58.44%{opacity:0}60.44%,96%{opacity:1}100%{opacity:0}}.l8{animation:l8 14.0s linear infinite}@keyframes l10{0%,66.22%{opacity:0}68.22%,96%{opacity:1}100%{opacity:0}}.l10{animation:l10 14.0s linear infinite}@keyframes l11{0%,74.0%{opacity:0}76.0%,96%{opacity:1}100%{opacity:0}}.l11{animation:l11 14.0s linear infinite}</style>
 <rect x="0.5" y="0.5" width="859" height="339" rx="12" fill="#000000" stroke="#313131"/>
 <text x="20" y="28" fill="#9B9B9B" style="font-size:12px">outbound-gates · a real run on the bundled demo company</text>
-<text class="l0" x="20" y="52" fill="#EDEDED">› og check draft.txt --to dana@quickstart-co.example</text>
+<text class="l0" x="20" y="52" fill="#EDEDED">› gate check draft.txt --to dana@quickstart-co.example</text>
 <text class="l1" x="20" y="74" fill="#EDEDED" font-weight="600">  - claims: the number &#x27;$0.006&#x27; has no sourced claim</text>
 <text class="l2" x="20" y="96" fill="#EDEDED" font-weight="600">  BLOCKED</text>
-<text class="l4" x="20" y="140" fill="#EDEDED">› og record --contact dana@quickstart-co.example --url</text>
+<text class="l4" x="20" y="140" fill="#EDEDED">› gate record --contact dana@quickstart-co.example --url</text>
 <text class="l5" x="20" y="162" fill="#EDEDED">    https://quickstart-co.example/pricing --quote &#x27;Transcription is billed at</text>
 <text class="l6" x="20" y="184" fill="#EDEDED">    $0.006 per audio minute&#x27; --value &#x27;$0.006&#x27;</text>
 <text class="l7" x="20" y="206" fill="#9B9B9B">  recorded: .gates/drafts/quickstart-co.example/…/claims/…json (page stored</text>
 <text class="l8" x="20" y="228" fill="#9B9B9B">    with its hash)</text>
-<text class="l10" x="20" y="272" fill="#EDEDED">› og check draft.txt --to dana@quickstart-co.example</text>
+<text class="l10" x="20" y="272" fill="#EDEDED">› gate check draft.txt --to dana@quickstart-co.example</text>
 <text class="l11" x="20" y="294" fill="#EDEDED" font-weight="600">  PASS</text>
 </svg>
