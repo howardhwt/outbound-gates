@@ -73,9 +73,16 @@ def test_the_report_shows_every_account_and_escapes_its_content():
     html = build_report(CRM, after, records, source_lines, [])
     for record in records:
         assert record["name"] in html
-    assert html.count('<details class="acct">') == len(records)
+    assert html.count('<details class="rp-acct">') == len(records)
     assert "Blocked by pre-send" in html and "Blocked by the gate" in html
     assert "http://" not in html.replace("https://", "")  # no outside resources
     assert "<script" not in html
     hostile = [dict(records[0], name="<img src=x onerror=alert(1)>")]
     assert "<img src=x" not in build_report(CRM, after, hostile, source_lines, [])
+
+
+def test_the_local_report_opens_from_disk_with_nothing_loaded():
+    """demo/out/report.html carries its own styles: no stylesheet, font or script from anywhere."""
+    after, _, records, source_lines = run_detailed(CRM, CANDIDATES, CONFIG)
+    html = build_report(CRM, after, records, source_lines, [])
+    assert "<link" not in html and "@import" not in html and "--bg:" in html

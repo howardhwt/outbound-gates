@@ -53,6 +53,15 @@ def test_the_pipeline_report_is_published(built):
     assert (out / ".nojekyll").exists()
 
 
+def test_the_pipeline_report_joins_the_portfolio(built):
+    out, _, _ = built
+    page = (out / "pipeline.html").read_text()
+    assert '<link rel="stylesheet" href="/style.css">' in page and "--bg:" not in page  # shared tokens, not a copy
+    nav = re.search(r'<nav class="nav" aria-label="Main">(.*?)</nav>', page).group(1)
+    assert re.findall(r'href="([^"]+)"', nav) == ["/", "/work/", "/outbound-gates/", site.REPO]
+    assert 'href="./"' in page  # back to the gate page
+
+
 def test_the_build_refuses_a_page_that_would_lie(monkeypatch, tmp_path):
     fake = {"draft": "", "to": "", "url": "", "page_sentence": "",
             "steps": [{"kind": "check", "exit": 0, "output": "PASS", "label": "", "command": ""}] * 3}

@@ -347,6 +347,15 @@ def _after_pass(run: dict) -> str:
             f'A comparison like that is yours to check.</p>')
 
 
+def nav_links(current: str) -> str:
+    """The four nav links. outbound-gates is marked current: "page" on the gate page, "true" on pages under it."""
+    return "".join(
+        (f'<a class="brand" href="{href}" aria-label="Howard Tam, home"><span class="long">{text}</span>'
+         f'<span class="short">HT</span></a>') if href == "/" else
+        (f'<a href="{href}" aria-current="{current}">{text}</a>' if href == "/outbound-gates/" else f'<a href="{href}">{text}</a>')
+        for href, text in NAV)
+
+
 def build_page(run: dict) -> str:
     blocks = []
     for n, step in enumerate(run["steps"]):
@@ -362,11 +371,7 @@ def build_page(run: dict) -> str:
     paragraphs = [p for p in run["draft"].strip().split("\n\n")]
     draft = "".join("<p>" + escape(p).replace("\n", "<br>").replace("$0.006", '<span class="og-num">$0.006</span>')
                     + "</p>" for p in paragraphs)
-    nav = "".join(
-        (f'<a class="brand" href="{href}" aria-label="Howard Tam, home"><span class="long">{text}</span>'
-         f'<span class="short">HT</span></a>') if href == "/" else
-        (f'<a href="{href}" aria-current="page">{text}</a>' if href == "/outbound-gates/" else f'<a href="{href}">{text}</a>')
-        for href, text in NAV)
+    nav = nav_links(current="page")
     return (PAGE.replace("__STEPS__", "\n".join(blocks)).replace("__DRAFT__", draft).replace("__NAV__", nav)
             .replace("__TO__", escape(run["to"])).replace("__REPO__", REPO).replace("__PORTFOLIO__", PORTFOLIO)
             .replace("__CMD_ADD__", _command_row("/plugin marketplace add howardhwt/outbound-gates"))
@@ -384,7 +389,7 @@ def build_pipeline() -> str:
     crm = load_crm(demo / "mock_crm.json")
     candidates = json.loads((demo / "candidates.json").read_text(encoding="utf-8"))
     after, _, records, source_lines = run_detailed(crm, candidates, load_config(CONFIG))
-    return build_report(crm, after, records, source_lines, [])
+    return build_report(crm, after, records, source_lines, [], nav=nav_links(current="true"))
 
 
 def build(out: Path, clip: Path | None) -> dict:
