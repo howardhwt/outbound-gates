@@ -41,8 +41,8 @@ Checked: 558 tests pass. Viewed at 1440px and 390px with the portfolio served at
 
 1. **Open the PR** for the redesign (PR body: What I built / Why this approach / When it breaks / What I learned, then Tested). After merge, check `docs/catch.svg` on GitHub: the animated clip couldn't be screenshotted headless.
 2. **Confirm `/impeccable` loads** in the fresh session. If it doesn't, run `/plugin` and read the load error.
-3. **Restyle `pipeline.html`** (`demo/report.py`) the same way. It still has the old look.
-4. **Live gate in the browser** (proposed, not started). Run the real gate in the visitor's browser with Pyodide (Python on WebAssembly). This is possible because the gate needs no installed packages and the demo company's page is bundled.
+3. **Restyle `pipeline.html`** (`demo/report.py`) the same way. Done in #24.
+4. **Live gate in the browser** (built: `demo/live.py`, `_site/live.zip`, the "Run it live" panel). Run the real gate in the visitor's browser with Pyodide (Python on WebAssembly). This is possible because the gate needs no installed packages and the demo company's page is bundled.
    - The visitor edits the draft, presses Check and sees the real verdict.
    - The replay stays the default; Pyodide (about 10MB) loads only when they click "Run it live".
    - It can check only against the bundled demo page, because browsers block fetching other sites.
