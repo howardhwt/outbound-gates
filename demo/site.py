@@ -213,8 +213,11 @@ PAGE = """<!doctype html>
 /* The catch: the agent's draft beside the company's own page, the gate's verdict drawn between their numbers.
    With JavaScript the frame pins while the visitor scrolls through the three steps; without it, it reads top down. */
 .og-frame{display:grid;gap:24px}
-.og-head .og-note{max-width:64ch}
-.og-duo{position:relative;display:grid;gap:48px;align-items:start;margin-top:8px}
+.og-duo{position:relative;display:grid;gap:48px;align-items:start;grid-template-areas:"hero" "mail" "page"}
+.og-hero{grid-area:hero}.og-mailwrap{grid-area:mail}.og-pagewrap{grid-area:page}
+.og-hero .lede{margin-top:20px}
+.og-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.og-real{margin-top:8px;max-width:64ch}
 .og-duo>*{min-width:0}
 .og-cap{font-size:13px;line-height:20px;color:var(--muted);margin-bottom:8px}
 .og-mail,.og-page{position:relative;z-index:1;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden}
@@ -241,7 +244,7 @@ font-size:14px;font-weight:500;color:var(--muted);transition:background-color 60
 .og-lock span{display:none}
 .og-frame:not([data-s]) .og-lock span:first-child,[data-s="0"] .og-lock span:nth-child(1),[data-s="1"] .og-lock span:nth-child(2),[data-s="2"] .og-lock span:nth-child(3){display:inline}
 .og-page{transition:opacity 700ms var(--e),filter 700ms var(--e),transform 800ms var(--e)}
-.og-js [data-s="0"] .og-page{opacity:.35;filter:blur(1px) saturate(0);transform:translateX(12px)}
+.og-js [data-s="0"] .og-page{opacity:.35;filter:blur(1px) saturate(0)}
 .og-bar{display:flex;gap:6px;align-items:center;min-height:48px;padding:8px 14px;border-bottom:1px solid var(--line)}
 .og-bar i{width:9px;height:9px;border-radius:50%;background:var(--line)}
 .og-url{flex:1;min-width:0;margin-left:8px;padding:4px 10px;border-radius:6px;background:var(--bg);font:12px/20px var(--mono);color:var(--muted);
@@ -342,14 +345,23 @@ border:1px solid var(--line);background:transparent;color:var(--muted);cursor:po
 .og-more summary:focus-visible{outline:2px solid var(--white);outline-offset:2px}
 .og-more[open] summary{margin-bottom:4px}
 @media (min-width:768px){h1{font-size:60px}}
-@media (min-width:900px){.og-duo{grid-template-columns:1fr 1fr;gap:72px}.og-live-run .og-duo{gap:24px}
+@media (min-width:900px){.og-duo{grid-template-columns:1fr 1fr;gap:48px 72px;grid-template-areas:"hero mail" "page mail"}
+.og-live-run .og-duo{gap:24px;grid-template-areas:none}
 .og-try li{grid-template-columns:4fr 7fr;grid-template-rows:auto 1fr;column-gap:24px;row-gap:4px}.og-try .what,.og-try .why{grid-column:1}.og-try .cmds{grid-column:2;grid-row:1 / span 2;align-self:start}}
 /* Pinned: the frame holds still for three screens of scrolling, one per step. JS adds og-pin only when the frame fits. */
-.og-pin .og-track{height:340vh}
-.og-pin .og-frame{position:sticky;top:0;min-height:100vh;min-height:100svh;align-content:center;padding:88px 0 24px}
-@media (max-width:899px){.og-pin .og-frame{gap:14px;padding-top:72px}.og-pin .og-cap{display:none}.og-pin .og-duo{gap:40px}
+.og-pin main.wrap{padding-top:0}
+.og-pin .og-track{height:var(--og-track,340vh)}
+.og-pin .og-frame{position:sticky;top:var(--og-top,0px);min-height:100vh;min-height:100svh;align-content:center;padding:88px 0 24px}
+@media (min-width:900px){.og-pin .og-duo{grid-template-areas:"left mail";align-items:center}
+.og-pin .og-hero,.og-pin .og-pagewrap{grid-area:left;transition:opacity 600ms var(--e),transform 800ms var(--e),filter 600ms var(--e),visibility 0s}
+.og-pin .og-frame:not([data-s="0"]) .og-hero{opacity:0;transform:translateY(-24px);filter:blur(4px);visibility:hidden;transition-delay:0s,0s,0s,600ms}
+.og-pin [data-s="0"] .og-pagewrap{opacity:0;transform:translateY(24px);filter:blur(4px);visibility:hidden;transition-delay:0s,0s,0s,600ms}
+.og-pin [data-s="0"] .og-page{opacity:1;filter:none}}
+@media (max-width:899px){.og-pagewrap .og-cap{display:none}}
+@media (max-width:599px){.og-hero h1{font-size:34px;line-height:38px}.og-hero .lede{font-size:16px;line-height:24px;margin-top:16px}.og-acts{margin-top:16px}}
+@media (max-width:899px){.og-pin .og-frame{gap:14px;padding-top:88px;min-height:0;align-content:start}.og-pin .og-cap{display:none}.og-pin .og-duo{gap:28px}.og-pin .og-saved{display:none}.og-pin .og-story p{font-size:15px;line-height:22px}
 .og-pin .og-mail-b .og-x{display:none}.og-pin .og-page-b h3{display:none}.og-pin .og-q{border:0;padding:0}
-.og-pin .og-head .og-note{display:none}.og-story p{font-size:16px;line-height:24px}}
+.og-story p{font-size:16px;line-height:24px}}
 @media (prefers-reduced-motion:reduce){.og-frame *,.og-live *{transition-duration:1ms!important}}
 @media print{.og-live,.og-copy,.og-dots,.og-wire,.og-badge,.og-printed>summary{display:none}.og-pin .og-track{height:auto}.og-pin .og-frame{position:static;min-height:0}
 .og-js .og-story{display:grid;min-height:0}.og-js .og-story li{position:static}.og-js .og-story li:not(.on){opacity:1;transform:none;filter:none}
@@ -358,28 +370,24 @@ border:1px solid var(--line);background:transparent;color:var(--muted);cursor:po
 <a class="skip" href="#main">Skip to content</a>
 <nav class="nav" aria-label="Main">__NAV__</nav>
 <main id="main" class="wrap">
-<header class="intro og-hero">
+<section class="og-sec og-catch" aria-labelledby="catch-h">
+<div class="og-track" id="og-track">
+<div class="og-frame" id="og-stage">
+<div class="og-duo" id="og-duo">
+<header class="og-hero">
 <h1>Your agent can't put an unsourced number in a cold email.</h1>
 <p class="lede">outbound-gates is a Claude Code plugin for agents that draft outbound. Every number in a draft needs
 the exact sentence from the company's own site, a calculation the gate recomputes, or one of your own facts. Send,
 reply and forward are blocked; a person sends.</p>
-<p class="og-acts"><a class="jump ask" href="#try-h">Try it on your prospect ↓</a><a class="jump" href="#catch-h">Watch it catch a wrong number ↓</a></p>
+<p class="og-acts"><a class="jump ask" href="#try-h">Try it on your prospect ↓</a></p>
 </header>
-
-<section class="og-sec" aria-labelledby="catch-h">
-<div class="og-track" id="og-track">
-<div class="og-frame" id="og-stage">
-<div class="og-head"><h2 id="catch-h">The gate catches a wrong number</h2>
-<p class="og-note">A real run on the bundled demo company, fictional like every company here. The gate checks the
-draft against the company's own page; what you see is its own verdict, rebuilt from the code on every change.</p></div>
-<div class="og-duo" id="og-duo">
-<div><p class="og-cap">What the agent wrote</p>
+<div class="og-mailwrap"><p class="og-cap">What the agent wrote</p>
 <article class="og-mail" aria-label="The agent's draft">
 <div class="og-mail-h"><span>To <b>__TO__</b></span></div>
 <div class="og-mail-b">__DRAFT__</div>
 <div class="og-mail-f"><span class="og-send">__LOCK_ICON__Send</span><span class="og-lock" id="og-lock">__LOCKS__</span></div>
 </article></div>
-<div><p class="og-cap">What their own page says</p>
+<div class="og-pagewrap"><p class="og-cap">What their own page says</p>
 <article class="og-page" aria-label="The company's pricing page">
 <div class="og-bar" aria-hidden="true"><i></i><i></i><i></i><span class="og-url">__URL_SHOWN__</span></div>
 <div class="og-page-b"><h3>Pricing</h3><p class="og-q">__QUOTE_HTML__</p>
@@ -388,8 +396,10 @@ draft against the company's own page; what you see is its own verdict, rebuilt f
 <svg class="og-wire" id="og-wire" aria-hidden="true"><path id="og-path"/></svg><span class="og-badge" id="og-badge" aria-hidden="true">≠</span>
 </div>
 <div class="og-foot">
+<h2 id="catch-h" class="og-sr">The gate catches a wrong number</h2>
 <div class="og-dots" role="group" aria-label="Steps"><button type="button" data-go="0" aria-label="Step 1: Check"></button><button type="button" data-go="1" aria-label="Step 2: Find the source"></button><button type="button" data-go="2" aria-label="Step 3: Fix and check"></button></div>
 <ol class="og-story" aria-live="polite">__STORY__</ol>
+<p class="fine og-real">A real gate run on the bundled demo company (fictional, like every company here), rebuilt from the code on every change.</p>
 </div>
 </div>
 </div>
@@ -448,7 +458,7 @@ printed.removeAttribute('open');
 function wire(){var d=duo.getBoundingClientRect(),a=num.getBoundingClientRect(),b=mark.getBoundingClientRect(),p,x1,y1,x2,y2,m;
 if(b.top>a.bottom+20){x1=a.left+a.width/2-d.left;y1=stage.querySelector('.og-mail').getBoundingClientRect().bottom-d.top;x2=b.left+b.width/2-d.left;y2=stage.querySelector('.og-page').getBoundingClientRect().top-d.top;m=(y1+y2)/2;
 p='M'+x1+' '+y1+' C'+x1+' '+m+' '+x2+' '+m+' '+x2+' '+y2;}
-else{x1=a.right-d.left;y1=a.top+a.height/2-d.top;x2=b.left-d.left;y2=b.top+b.height/2-d.top;m=(x1+x2)/2;
+else{var ltr=b.left>a.left;x1=(ltr?a.right:a.left)-d.left;y1=a.top+a.height/2-d.top;x2=(ltr?b.left:b.right)-d.left;y2=b.top+b.height/2-d.top;m=(x1+x2)/2;
 p='M'+x1+' '+y1+' C'+m+' '+y1+' '+m+' '+y2+' '+x2+' '+y2;}
 path.setAttribute('d',p);var mid=path.getPointAtLength(path.getTotalLength()/2);badge.style.left=mid.x+'px';badge.style.top=mid.y+'px';}
 function go(i){if(i===cur)return;cur=i;stage.setAttribute('data-s',i);printed.className='og-printed s'+i;
@@ -460,13 +470,24 @@ if(i===1&&!reduce){var len=path.getTotalLength();path.style.transition='none';pa
 path.getBoundingClientRect();path.style.transition='stroke-dashoffset 900ms cubic-bezier(.16,1,.3,1)';path.style.strokeDashoffset=0;
 setTimeout(function(){if(cur===1){path.style.transition='';path.style.strokeDasharray='';path.style.strokeDashoffset=''}},950);}}
 function pinned(){return root.classList.contains('og-pin')}
-function fit(){root.classList.add('og-pin');if(stage.offsetHeight>innerHeight)root.classList.remove('og-pin');wire();}
-function onScroll(){if(!pinned())return;var run=track.offsetHeight-innerHeight,p=Math.min(1,Math.max(0,-track.getBoundingClientRect().top/run));
-go(p<0.34?0:p<0.67?1:2);}
+var NAVH=72,stick=0,span=1;
+function fit(){root.classList.add('og-pin');root.style.removeProperty('--og-top');root.style.removeProperty('--og-track');
+var h=stage.offsetHeight,wide=innerWidth>=900,mail=stage.querySelector('.og-mailwrap').getBoundingClientRect().top-stage.getBoundingClientRect().top;
+var ok=wide?h<=innerHeight+1:h-mail+NAVH+8<=innerHeight;
+var most=0;story.forEach(function(li){most=Math.max(most,li.offsetHeight)});stage.querySelector('.og-story').style.minHeight=most+'px';
+if(!ok){root.classList.remove('og-pin');wire();return;}
+stick=wide?Math.min(0,innerHeight-h):Math.min(0,NAVH+8-mail);span=Math.round(innerHeight*2.4);
+root.style.setProperty('--og-top',stick+'px');root.style.setProperty('--og-track',(h+span)+'px');wire();}
+var auto=-1;
+var hero=stage.querySelector('.og-hero');
+function onScroll(){var k;if(innerWidth<900){var hb=hero.getBoundingClientRect().bottom;hero.style.opacity=Math.min(1,Math.max(0,(hb-NAVH)/160));}else hero.style.opacity='';
+if(pinned()){var p=Math.min(1,Math.max(0,(stick-track.getBoundingClientRect().top)/span));k=p<0.34?0:p<0.67?1:2;}
+else{var r=stage.querySelector('.og-page').getBoundingClientRect(),h=innerHeight;k=r.top>h*0.75?0:r.bottom>h*0.6?1:2;}
+if(k!==auto){auto=k;go(k);}}
 dots.forEach(function(b){b.onclick=function(){var k=+b.getAttribute('data-go');
-if(!pinned()){go(k);return;}
-var run=track.offsetHeight-innerHeight,top=track.getBoundingClientRect().top+scrollY;
-scrollTo({top:top+run*[0.15,0.5,0.85][k],behavior:reduce?'auto':'smooth'});}});
+if(!pinned()){go(k);stage.querySelector(k?'.og-pagewrap':'.og-mailwrap').scrollIntoView({block:'center',behavior:reduce?'auto':'smooth'});return;}
+var top=track.getBoundingClientRect().top+scrollY-stick;
+scrollTo({top:top+span*[0.15,0.5,0.85][k],behavior:reduce?'auto':'smooth'});}});
 go(0);fit();onScroll();
 addEventListener('scroll',onScroll,{passive:true});
 addEventListener('resize',function(){fit();onScroll();});
