@@ -47,8 +47,12 @@ def net_dir(home: Path) -> Path:
 
 
 def og_command(home: Path) -> str:
-    """The gate path to type, with ~ for the home folder: shorter, and the same on every machine."""
+    """The gate path to type, with ~ for the home folder: shorter, and the same on every machine.
+
+    Before the 0.10.0 refresh only the old og launcher exists, so name that one: gate isn't there yet."""
     path = net_dir(home) / "gate"
+    if not path.exists() and (net_dir(home) / "og").exists():
+        path = net_dir(home) / "og"
     try:
         return "~/" + str(path.relative_to(home.resolve()))
     except ValueError:
