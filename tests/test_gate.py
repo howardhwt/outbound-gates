@@ -43,6 +43,18 @@ def staged_code(home, capsys, *argv):
 
 # --- proposals --------------------------------------------------------------------------
 
+
+def test_the_approve_line_names_the_command_that_exists(home, project, capsys):
+    net(home).mkdir(parents=True)
+    (net(home) / "og").write_text("")  # installed before 0.10.0: og only, until the refresh adds gate
+    run(home, "propose", "add-fact", "$0.01", "--project", str(project))
+    out = capsys.readouterr().out
+    assert "! ~/.config/outbound-gates/og yes " in out and "! ~/.config/outbound-gates/og no" in out
+    assert run(home, "no") == 0
+    (net(home) / "gate").write_text("")
+    run(home, "propose", "add-fact", "$0.01", "--project", str(project))
+    assert "! ~/.config/outbound-gates/gate yes " in capsys.readouterr().out
+
 def test_nothing_changes_until_the_person_approves(home, project, capsys):
     code = staged_code(home, capsys, "add-fact", "$0.01", "--project", str(project))
     assert not (net(home) / "config.json").exists()
