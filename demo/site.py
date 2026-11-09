@@ -358,6 +358,8 @@ border:1px solid var(--line);background:transparent;color:var(--muted);cursor:po
 .og-pin [data-s="0"] .og-pagewrap{opacity:0;transform:translateY(24px);filter:blur(4px);visibility:hidden;transition-delay:0s,0s,0s,600ms}
 .og-pin [data-s="0"] .og-page{opacity:1;filter:none}}
 @media (max-width:899px){.og-pagewrap .og-cap{display:none}}
+/* Short laptop windows: a smaller headline and tighter frame, so the story still pins at about 720px tall. */
+@media (min-width:900px) and (max-height:820px){.og-pin .og-frame{padding:80px 0 12px;gap:16px}.og-pin .og-hero h1{font-size:48px}}
 @media (max-width:599px){.og-hero h1{font-size:34px;line-height:38px}.og-hero .lede{font-size:16px;line-height:24px;margin-top:16px}.og-acts{margin-top:16px}}
 @media (max-width:899px){.og-pin .og-frame{gap:14px;padding-top:88px;min-height:0;align-content:start}.og-pin .og-cap{display:none}.og-pin .og-duo{gap:28px}.og-pin .og-saved{display:none}.og-pin .og-story p{font-size:15px;line-height:22px}
 .og-pin .og-mail-b .og-x{display:none}.og-pin .og-page-b h3{display:none}.og-pin .og-q{border:0;padding:0}
@@ -472,9 +474,9 @@ setTimeout(function(){if(cur===1){path.style.transition='';path.style.strokeDash
 function pinned(){return root.classList.contains('og-pin')}
 var NAVH=72,stick=0,span=1;
 function fit(){root.classList.add('og-pin');root.style.removeProperty('--og-top');root.style.removeProperty('--og-track');
+var most=0;story.forEach(function(li){most=Math.max(most,li.offsetHeight)});stage.querySelector('.og-story').style.minHeight=most+'px';
 var h=stage.offsetHeight,wide=innerWidth>=900,mail=stage.querySelector('.og-mailwrap').getBoundingClientRect().top-stage.getBoundingClientRect().top;
 var ok=wide?h<=innerHeight+1:h-mail+NAVH+8<=innerHeight;
-var most=0;story.forEach(function(li){most=Math.max(most,li.offsetHeight)});stage.querySelector('.og-story').style.minHeight=most+'px';
 if(!ok){root.classList.remove('og-pin');wire();return;}
 stick=wide?Math.min(0,innerHeight-h):Math.min(0,NAVH+8-mail);span=Math.round(innerHeight*2.4);
 root.style.setProperty('--og-top',stick+'px');root.style.setProperty('--og-track',(h+span)+'px');wire();}
@@ -491,7 +493,11 @@ scrollTo({top:top+span*[0.15,0.5,0.85][k],behavior:reduce?'auto':'smooth'});}});
 go(0);fit();onScroll();
 addEventListener('scroll',onScroll,{passive:true});
 addEventListener('resize',function(){fit();onScroll();});
-if(document.fonts)document.fonts.ready.then(fit);
+// Measure again whenever the cards change size: the web font swapping in after load makes them shorter.
+var refit=function(){fit();onScroll();},queued=0;
+addEventListener('load',refit);
+if(window.ResizeObserver){var ro=new ResizeObserver(function(){if(!queued){queued=requestAnimationFrame(function(){queued=0;refit();});}});
+ro.observe(duo);ro.observe(stage.querySelector('.og-story'));}
 var py=null,session=null;
 L('og-live-start').onclick=function(){var b=this;b.disabled=true;b.textContent='Loading Python…';
 var t=document.createElement('script');t.src='__PYODIDE__pyodide.js';
@@ -603,8 +609,9 @@ def build_page(run: dict) -> str:
     if UNCHECKED not in run["right_draft"]:
         raise SystemExit(f"the demo draft no longer says {UNCHECKED!r}; update the page's note on what the gate skips")
     paragraphs = run["wrong_draft"].strip().split("\n\n")
+    extra = ' class="og-x"'  # greeting and sign-off: dropped when a phone pins the cards
     draft = "".join(
-        f'<p{"" if WRONG in p else " class=\"og-x\""}>'
+        f'<p{"" if WRONG in p else extra}>'
         + escape(p).replace("\n", "<br>").replace(escape(WRONG), _number(run)) + "</p>" for p in paragraphs)
     quote = escape(run["page_sentence"]).replace(escape(RIGHT), f'<span class="og-mark">{escape(RIGHT)}</span>', 1)
     locks = "".join(f"<span>{escape(t)}</span>" for t in
