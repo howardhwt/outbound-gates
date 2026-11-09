@@ -94,12 +94,34 @@ def test_the_portfolio_still_has_what_the_page_borrows():
 
 
 def test_the_catch_is_on_the_page_before_any_click(built):
-    """PRODUCT.md principle 1: BLOCKED is visible without JavaScript doing anything."""
+    """PRODUCT.md principle 1: without JavaScript the page reads top down, the gate's output open, BLOCKED first."""
     out, _, _ = built
     page = (out / "index.html").read_text()
-    steps = re.split(r'(?=<div class="og-step[ "])', page)[1:]
-    assert 'class="og-step shown first"' in steps[0] and "BLOCKED" in steps[0]
-    assert 'data-run="Record the source"' in page and 'data-run="Check again"' in page
+    assert 'id="og-printed" open>' in page  # the script closes it; without the script it stays open
+    outs = re.findall(r'<div class="og-out" data-o="(\d)">(.*?)</figure></div>', page, re.S)
+    assert [n for n, _ in outs] == ["0", "1", "2"] and "BLOCKED" in outs[0][1]
+
+
+def test_the_page_tells_the_wrong_number_story(built):
+    """The draft says $0.06, the company's page says $0.006: stopped, refused, then fixed and passed, all real."""
+    out, _, run = built
+    story = run["story"]
+    assert [s["exit"] for s in story["steps"]] == [1, 1, 0, 0]
+    page = (out / "index.html").read_text()
+    assert page.index(f"&#x27;{site.WRONG}&#x27; has no sourced claim") < page.index("refused: value not in quote") < page.rindex(">PASS<")
+    assert site.WRONG in story["wrong_draft"] and site.RIGHT not in story["wrong_draft"]
+    assert f'<span class="og-mark">{site.RIGHT}</span>' in page  # the company's own sentence, its number marked
+    assert '<span class="og-num">$0.0<span class="og-zero">0</span>6</span>' in page  # step 3 grows the missing 0
+    for lock in (f"Locked: nothing backs up {site.WRONG}", "Unlocked: a person sends it"):
+        assert lock in page
+
+
+def test_the_build_refuses_a_story_the_gate_did_not_act_out(monkeypatch, tmp_path):
+    real = site.run_wrong_number()
+    real["steps"][1] = dict(real["steps"][1], exit=0, output="recorded: …")  # as if $0.06 had been accepted
+    monkeypatch.setattr(site, "run_wrong_number", lambda: real)
+    with pytest.raises(SystemExit, match="stopped, refused, fixed and passed"):
+        site.build(tmp_path / "out", None)
 
 
 def test_the_page_says_what_the_gate_lets_through(built):

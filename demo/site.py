@@ -3,14 +3,15 @@
     python -m demo.site [--out _site] [--clip docs/catch.svg]
 
 Nothing on the site is written by hand. This copies the quickstart project
-(one invented company, its pricing page, one draft), runs the real gate on it
-(blocked for an unsourced number, the source recorded, passed), and turns that
-exact output into:
+(one invented company, its pricing page, one draft) and runs the real gate on it
+twice, turning that exact output into:
 
-  _site/index.html      the page that replays the run, step by step
+  _site/index.html      the gate page: the draft with a wrong number ($0.06) beside the company's page ($0.006);
+                        stopped, recording $0.06 refused, fixed to $0.006 and passed (run_wrong_number)
   _site/pipeline.html   the full pipeline demo report (demo/report.py)
   _site/live.zip        the gate and the demo company, for "Run it live" (demo/live.py, in Pyodide)
-  docs/catch.svg        the README clip, an animated terminal of the same run
+  docs/catch.svg        the README clip, an animated terminal of the quickstart run as /outbound-gates:try does it
+                        (blocked for an unsourced number, the source recorded, passed: run_catch)
 
 Local paths are replaced (the plugin folder by $OG, the temporary project by
 ~/outbound-gates-try) so nothing from the machine that built it leaks out.
@@ -64,6 +65,55 @@ def run_catch() -> dict:
     sentence = re.sub(r"<[^>]+>", "", re.search(r"<p>(.*?)</p>", page, re.S).group(1)).strip()
     return {"draft": draft, "to": quickstart.CONTACT, "url": quickstart.URL, "page_sentence": sentence,
             "steps": steps}
+
+
+RIGHT = "$0.006"  # what the company's pricing page says
+WRONG = "$0.06"  # what the page's story has the agent write: the same price, off by ten times
+
+
+def run_wrong_number() -> dict:
+    """The page's story, run for real: the agent writes $0.06, the gate stops it, recording $0.06 against the
+    page's sentence is refused, then the number is fixed to $0.006, recorded and checked again."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        project = quickstart.copy_to(tmp / "outbound-gates-try")
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(tmp / "home")}
+        (tmp / "home").mkdir()
+        draft_file = project / "draft.txt"
+        right_draft = draft_file.read_text(encoding="utf-8")
+        if right_draft.count(RIGHT) != 1:
+            raise SystemExit(f"the demo draft should say {RIGHT} once; the page's story is built on it")
+        wrong_draft = right_draft.replace(RIGHT, WRONG)
+        check, record, _ = quickstart.next_commands(project)
+        record_wrong = record.replace(f"--value '{RIGHT}'", f"--value '{WRONG}'")
+
+        def sh(command: str) -> dict:
+            done = subprocess.run(["sh", "-c", command], cwd=tmp, env=env, capture_output=True, text=True)
+            return {"command": _clean(command, project), "exit": done.returncode,
+                    "output": _clean((done.stdout + done.stderr).strip(), project)}
+
+        draft_file.write_text(wrong_draft, encoding="utf-8")
+        steps = [sh(check), sh(record_wrong)]
+        draft_file.write_text(right_draft, encoding="utf-8")
+        steps.append(sh(record))
+        steps.append(sh(check))
+        page = (project / "pages" / "quickstart-co.example" / "pricing.html").read_text(encoding="utf-8")
+    sentence = re.sub(r"<[^>]+>", "", re.search(r"<p>(.*?)</p>", page, re.S).group(1)).strip()
+    return {"wrong_draft": wrong_draft, "right_draft": right_draft, "to": quickstart.CONTACT, "url": quickstart.URL,
+            "page_sentence": sentence, "steps": steps}
+
+
+def check_wrong_number(run: dict) -> None:
+    """Refuse to publish a page whose story the gate didn't just act out."""
+    stopped, refused, recorded, passed = run["steps"]
+    ok = (stopped["exit"] == 1 and f"'{WRONG}' has no sourced claim" in stopped["output"]
+          and stopped["output"].endswith("BLOCKED")
+          and refused["exit"] != 0 and "value not in quote" in refused["output"]
+          and recorded["exit"] == 0 and passed["exit"] == 0 and passed["output"].endswith("PASS")
+          and RIGHT in run["page_sentence"] and WRONG not in run["page_sentence"].replace(RIGHT, ""))
+    if not ok:
+        raise SystemExit("the gate didn't behave as the page says (stopped, refused, fixed and passed): "
+                         + repr([(s["exit"], s["output"][-60:]) for s in run["steps"]]))
 
 
 def _short_command(step: dict, run: dict) -> str:
@@ -154,59 +204,123 @@ PAGE = """<!doctype html>
 <script>document.documentElement.classList.add('og-js');</script>
 <link rel="stylesheet" href="/style.css">
 <style>
-.og-top{display:grid;gap:64px}
 .og-hero h1{max-width:760px}
 .og-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px;margin-top:24px}
 .og-acts .jump{margin-top:0}
 .og-sec h2{margin-bottom:8px}
 .og-sec>.fine,.og-sec>.og-note{max-width:var(--measure)}
 .og-note{color:var(--muted);text-wrap:pretty}
-.og-catch{display:grid;gap:24px;margin-top:24px;align-items:start}
-.og-draft{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:24px}
-.og-draft .to{font-family:var(--mono);font-size:12px;line-height:16px;color:var(--muted);margin-bottom:16px}
-.og-draft p{color:var(--text-2);max-width:var(--measure)}
-.og-draft p+p{margin-top:12px}
-.og-num{background:var(--text);color:var(--bg);border-radius:3px;padding:0 4px;font-variant-numeric:tabular-nums}
-.og-steps,.og-run{display:grid;gap:24px}
-.og-step .head{display:flex;align-items:center;gap:12px;font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
-.og-step .term{margin:8px 0 0}
-.og-after{margin-top:16px;max-width:var(--measure)}
-.og-step pre{margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
-.og-step .res{display:block;padding-left:16px;color:var(--muted)}
-.og-step .hit{color:var(--text)}
-.og-step .verdict{color:var(--text);font-weight:500}
-.og-tag{font-family:var(--mono);font-size:12px;line-height:16px;border-radius:3px;padding:2px 6px;border:1px solid var(--muted);color:var(--muted)}
-.og-tag.stop{background:var(--text);border-color:var(--text);color:var(--bg)}
-.og-tag.pass{border-color:var(--text);color:var(--text)}
-.og-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
-.og-ctl button{font:inherit;font-weight:500;min-height:44px;padding:8px 12px;border-radius:8px;cursor:pointer;
-border:1px solid var(--line);background:transparent;color:var(--text);
-transition:background-color 300ms var(--ease),border-color 300ms var(--ease),transform 500ms var(--ease)}
-.og-ctl button:hover{background:var(--surface);border-color:var(--muted)}
-.og-ctl button.primary{background:var(--text);border-color:var(--text);color:var(--bg)}
-.og-ctl button.primary:hover{background:var(--white)}
-.og-ctl button:active{transform:scale(0.98)}
-.og-ctl button:disabled{opacity:.6;cursor:default;transform:none}
-.og-ctl button[hidden]{display:none}
-.og-step,.og-ctl{scroll-margin:96px 0 24px}
-.og-ctl button:focus-visible,.og-copy:focus-visible{outline:2px solid var(--white);outline-offset:2px}
-.og-ctl{display:none}
-.og-hint{flex-basis:100%;max-width:var(--measure);text-wrap:pretty}
-.og-js .og-ctl{display:flex}
-.og-js .og-step:not(.shown){display:none}
-.og-js .og-step.first{animation:none}
-.og-js .og-step.shown{animation:og-rise 800ms var(--e) both}
-@keyframes og-rise{from{opacity:0;transform:translateY(6px);filter:blur(2px)}}
-.og-live{display:none;margin-top:8px;padding-top:24px;border-top:1px solid var(--line)}
+/* The catch: the agent's draft beside the company's own page, the gate's verdict drawn between their numbers.
+   With JavaScript the frame pins while the visitor scrolls through the three steps; without it, it reads top down. */
+.og-frame{display:grid;gap:24px}
+.og-duo{position:relative;display:grid;gap:48px;align-items:start;grid-template-areas:"hero" "mail" "page"}
+.og-hero{grid-area:hero}.og-mailwrap{grid-area:mail}.og-pagewrap{grid-area:page}
+.og-hero .lede{margin-top:20px}
+.og-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.og-real{margin-top:8px;max-width:64ch}
+.og-duo>*{min-width:0}
+.og-cap{font-size:13px;line-height:20px;color:var(--muted);margin-bottom:8px}
+.og-mail,.og-page{position:relative;z-index:1;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden}
+.og-mail-h{display:flex;align-items:center;min-height:48px;padding:12px 20px;border-bottom:1px solid var(--line);font-size:13px;line-height:20px;color:var(--muted)}
+.og-mail-h span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.og-mail-h b{font:400 12px/20px var(--mono);color:var(--text-2)}
+.og-mail-b{padding:18px 20px}
+.og-mail-b p{color:var(--text-2)}
+.og-mail-b p+p{margin-top:12px}
+.og-num{display:inline-flex;align-items:baseline;padding:0 3px;margin:0 -1px;border-radius:4px;color:var(--text);font-variant-numeric:tabular-nums;
+transition:background-color 500ms var(--e),color 500ms var(--e),box-shadow 500ms var(--e)}
+.og-zero{display:inline-block;max-width:0;opacity:0;overflow:hidden;filter:blur(3px);transition:max-width 700ms var(--e),opacity 400ms 150ms,filter 700ms var(--e)}
+.og-frame:not([data-s="2"]) .og-num{background:var(--text);color:var(--bg)}
+[data-s="2"] .og-num{box-shadow:inset 0 0 0 1px var(--text)}
+[data-s="2"] .og-zero{max-width:.7em;opacity:1;filter:none}
+.og-mail-f{display:flex;align-items:center;gap:12px;padding:12px 20px 16px}
+.og-send{display:inline-flex;align-items:center;gap:8px;flex:none;min-height:36px;padding:0 16px;border-radius:999px;border:1px solid var(--line);
+font-size:14px;font-weight:500;color:var(--muted);transition:background-color 600ms var(--e),color 600ms var(--e),border-color 600ms var(--e)}
+.og-send svg{width:16px;height:16px}
+.og-shackle{transition:transform 600ms var(--e);transform-origin:12px 7px}
+[data-s="2"] .og-send,.og-live-run.passed .og-send{background:var(--text);border-color:var(--text);color:var(--bg)}
+[data-s="2"] .og-shackle,.og-live-run.passed .og-shackle{transform:translateY(-2px) rotate(25deg)}
+.og-lock{font-size:13px;line-height:20px;color:var(--muted);min-width:0}
+.og-lock span{display:none}
+.og-frame:not([data-s]) .og-lock span:first-child,[data-s="0"] .og-lock span:nth-child(1),[data-s="1"] .og-lock span:nth-child(2),[data-s="2"] .og-lock span:nth-child(3){display:inline}
+.og-page{transition:opacity 700ms var(--e),filter 700ms var(--e),transform 800ms var(--e)}
+.og-js [data-s="0"] .og-page{opacity:.35;filter:blur(1px) saturate(0)}
+.og-bar{display:flex;gap:6px;align-items:center;min-height:48px;padding:8px 14px;border-bottom:1px solid var(--line)}
+.og-bar i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.og-url{flex:1;min-width:0;margin-left:8px;padding:4px 10px;border-radius:6px;background:var(--bg);font:12px/20px var(--mono);color:var(--muted);
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.og-page-b{padding:18px 20px}
+.og-page-b h3{font-size:20px;line-height:28px;font-weight:600;color:var(--text);margin-bottom:10px}
+.og-q{border-top:1px solid var(--line);padding-top:12px;color:var(--text-2)}
+.og-mark{padding:0 3px;border-radius:4px;color:var(--text);box-shadow:inset 0 0 0 1px var(--text);font-variant-numeric:tabular-nums}
+.og-saved{display:flex;align-items:center;gap:6px;margin-top:14px;font-size:12px;line-height:16px;color:var(--muted)}
+.og-saved svg{width:13px;height:13px;flex:none}
+.og-wire,.og-badge{display:none}
+.og-js .og-wire{display:block;position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:0;transition:opacity 600ms var(--e)}
+.og-wire path{fill:none;stroke:var(--muted);stroke-width:1.5;transition:stroke 500ms}
+[data-s="1"] .og-wire path{stroke-dasharray:5 5}
+[data-s="2"] .og-wire path{stroke:var(--text)}
+.og-js .og-badge{display:grid;position:absolute;z-index:2;transform:translate(-50%,-50%);place-items:center;width:36px;height:36px;border-radius:50%;
+background:var(--bg);border:1px solid var(--muted);font-size:18px;font-weight:600;color:var(--text);
+transition:opacity 600ms var(--e),background-color 500ms,color 500ms,border-color 500ms}
+[data-s="2"] .og-badge{background:var(--text);border-color:var(--text);color:var(--bg)}
+[data-s="0"] .og-wire,[data-s="0"] .og-badge{opacity:0}
+.og-foot{display:grid;gap:8px}
+.og-dots{display:none;gap:4px;margin-left:-10px}
+.og-js .og-dots{display:flex}
+.og-dots button{all:unset;cursor:pointer;width:28px;height:28px;display:grid;place-items:center;border-radius:50%}
+.og-dots button::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line);transition:background-color 300ms,transform 400ms var(--e)}
+.og-dots button.done::before{background:var(--muted)}
+.og-dots button[aria-current]::before{background:var(--text);transform:scale(1.25)}
+.og-dots button:focus-visible{outline:2px solid var(--white)}
+.og-story{list-style:none;display:grid;gap:16px}
+.og-story small{display:block;font:12px/16px var(--mono);color:var(--muted);margin-bottom:4px}
+.og-story p{font-size:20px;line-height:28px;color:var(--text);max-width:40em;text-wrap:pretty}
+.og-js .og-story{position:relative;display:block;min-height:96px}
+.og-js .og-story li{position:absolute;inset:0 auto auto 0;transition:opacity 500ms var(--e),transform 600ms var(--e),filter 500ms}
+.og-js .og-story li:not(.on){opacity:0;transform:translateY(8px);filter:blur(3px);pointer-events:none}
+.og-edge{margin-top:24px}
+.og-edge q{color:var(--text-2)}
+.og-printed{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.og-printed>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;min-height:44px;width:max-content;font-size:14px;color:var(--muted)}
+.og-printed>summary::-webkit-details-marker{display:none}
+.og-printed>summary:hover{color:var(--text)}
+.og-printed>summary:focus-visible{outline:2px solid var(--white);outline-offset:2px}
+.og-printed>summary svg{width:14px;height:14px;transition:transform 250ms var(--e)}
+.og-printed[open]>summary svg{transform:rotate(90deg)}
+.og-out .lbl{font-size:13px;line-height:20px;color:var(--muted);margin-top:16px}
+.og-out .term{margin:8px 0 0}
+.og-js .og-printed .og-out{display:none}
+.og-js .og-printed.s0 .og-out[data-o="0"],.og-js .og-printed.s1 .og-out[data-o="1"],.og-js .og-printed.s2 .og-out[data-o="2"]{display:block}
+.og-js .og-printed .og-out .lbl{display:none}
+.og-term pre{margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
+.og-term .res{display:block;padding-left:16px;color:var(--muted)}
+.og-term .hit{color:var(--text)}
+.og-term .verdict{color:var(--text);font-weight:500}
+.og-term .cmd+.cmd,.og-term .res+.cmd{display:block;margin-top:12px}
+.og-term .cmd{display:block}
+/* Try it yourself: the same two cards, the draft editable, the real gate run in the browser. */
+.og-live{display:none;margin-top:32px;padding-top:24px;border-top:1px solid var(--line)}
 .og-js .og-live{display:grid;gap:16px}
-.og-js .og-ctl[hidden]{display:none}
-.og-live-run{display:grid;gap:12px}.og-live-run[hidden]{display:none}
-.og-live-label{font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
-#og-live-draft{width:100%;min-height:200px;resize:vertical;padding:16px;border:1px solid var(--line);border-radius:12px;
-background:var(--surface);color:var(--text-2);font:inherit;font-size:16px;line-height:24px}
-#og-live-draft:focus-visible{outline:2px solid var(--white);outline-offset:2px}
-.og-live-out{margin:0}.og-live-out pre{margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
-.og-live-out .og-tag{display:inline-block;margin-bottom:8px}.og-live,.og-live-run>*{min-width:0}.og-live-out:has(pre:empty){display:none}
+.og-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.og-row[hidden]{display:none}
+.og-btn{font:inherit;font-weight:500;min-height:44px;padding:8px 16px;border-radius:999px;cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--text);
+transition:background-color 300ms var(--ease),border-color 300ms var(--ease),transform 150ms var(--ease)}
+.og-btn:hover{background:var(--surface);border-color:var(--muted)}
+.og-btn.primary{background:var(--text);border-color:var(--text);color:var(--bg)}
+.og-btn.primary:hover{background:var(--white)}
+.og-btn:active{transform:scale(0.97)}
+.og-btn:disabled{opacity:.6;cursor:default;transform:none}
+.og-btn:focus-visible,.og-copy:focus-visible{outline:2px solid var(--white);outline-offset:2px}
+.og-hint{max-width:var(--measure);text-wrap:pretty}
+.og-live-run{display:grid;gap:16px}.og-live-run[hidden]{display:none}
+.og-live-run .og-duo{gap:16px;margin-top:0}
+#og-live-draft{display:block;width:100%;min-height:220px;resize:vertical;padding:18px 20px;border:0;background:transparent;color:var(--text-2);font:inherit;font-size:16px;line-height:24px}
+#og-live-draft:focus-visible{outline:2px solid var(--white);outline-offset:-2px}
+.og-live-run .og-mail-f{flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px}
+.og-live-run .og-page-b .og-btn{margin-top:16px}
+.og-live-run .og-q{border:0;padding:0}
+.og-live-out{margin:0}.og-live-out:has(pre:empty){display:none}
 .og-try{list-style:none;margin-top:24px;counter-reset:og}
 .og-try li{display:grid;gap:8px;align-items:start;padding:16px 0;border-top:1px solid var(--line);counter-increment:og}
 .og-try .what::before{content:counter(og);display:inline-block;min-width:24px;font-family:var(--mono);font-size:12px;color:var(--muted)}
@@ -231,64 +345,99 @@ border:1px solid var(--line);background:transparent;color:var(--muted);cursor:po
 .og-more summary:focus-visible{outline:2px solid var(--white);outline-offset:2px}
 .og-more[open] summary{margin-bottom:4px}
 @media (min-width:768px){h1{font-size:60px}}
-@media (min-width:900px){.og-catch{grid-template-columns:5fr 7fr}.og-draft{position:sticky;top:96px}
+@media (min-width:900px){.og-duo{grid-template-columns:1fr 1fr;gap:48px 72px;grid-template-areas:"hero mail" "page mail"}
+.og-live-run .og-duo{gap:24px;grid-template-areas:none}
 .og-try li{grid-template-columns:4fr 7fr;grid-template-rows:auto 1fr;column-gap:24px;row-gap:4px}.og-try .what,.og-try .why{grid-column:1}.og-try .cmds{grid-column:2;grid-row:1 / span 2;align-self:start}}
-/* From 1100px the catch moves up beside the claim, like the pipeline on the portfolio home. */
-@media (min-width:1100px){.og-top{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;align-items:start}
-.og-hero{position:sticky;top:128px}.og-catch{grid-template-columns:1fr}.og-draft{position:static}.og-watch{display:none}}
-@media (prefers-reduced-motion:reduce){.og-js .og-step.shown{animation:none}.og-ctl button{transition:none}}
-@media print{.og-live,.og-ctl,.og-copy,.og-more summary{display:none}.og-js .og-step:not(.shown){display:block}.og-draft{position:static}}
+/* Pinned: the frame holds still for three screens of scrolling, one per step. JS adds og-pin only when the frame fits. */
+.og-pin main.wrap{padding-top:0}
+.og-pin .og-track{height:var(--og-track,340vh)}
+.og-pin .og-frame{position:sticky;top:var(--og-top,0px);min-height:100vh;min-height:100svh;align-content:center;padding:88px 0 24px}
+@media (min-width:900px){.og-pin .og-duo{grid-template-areas:"left mail";align-items:center}
+.og-pin .og-hero,.og-pin .og-pagewrap{grid-area:left;transition:opacity 600ms var(--e),transform 800ms var(--e),filter 600ms var(--e),visibility 0s}
+.og-pin .og-frame:not([data-s="0"]) .og-hero{opacity:0;transform:translateY(-24px);filter:blur(4px);visibility:hidden;transition-delay:0s,0s,0s,600ms}
+.og-pin [data-s="0"] .og-pagewrap{opacity:0;transform:translateY(24px);filter:blur(4px);visibility:hidden;transition-delay:0s,0s,0s,600ms}
+.og-pin [data-s="0"] .og-page{opacity:1;filter:none}}
+@media (max-width:899px){.og-pagewrap .og-cap{display:none}}
+@media (max-width:599px){.og-hero h1{font-size:34px;line-height:38px}.og-hero .lede{font-size:16px;line-height:24px;margin-top:16px}.og-acts{margin-top:16px}}
+@media (max-width:899px){.og-pin .og-frame{gap:14px;padding-top:88px;min-height:0;align-content:start}.og-pin .og-cap{display:none}.og-pin .og-duo{gap:28px}.og-pin .og-saved{display:none}.og-pin .og-story p{font-size:15px;line-height:22px}
+.og-pin .og-mail-b .og-x{display:none}.og-pin .og-page-b h3{display:none}.og-pin .og-q{border:0;padding:0}
+.og-story p{font-size:16px;line-height:24px}}
+@media (prefers-reduced-motion:reduce){.og-frame *,.og-live *{transition-duration:1ms!important}}
+@media print{.og-live,.og-copy,.og-dots,.og-wire,.og-badge,.og-printed>summary{display:none}.og-pin .og-track{height:auto}.og-pin .og-frame{position:static;min-height:0}
+.og-js .og-story{display:grid;min-height:0}.og-js .og-story li{position:static}.og-js .og-story li:not(.on){opacity:1;transform:none;filter:none}
+.og-js .og-printed .og-out{display:block}.og-js .og-printed .og-out .lbl{display:block}}
 </style></head><body>
 <a class="skip" href="#main">Skip to content</a>
 <nav class="nav" aria-label="Main">__NAV__</nav>
 <main id="main" class="wrap">
-<div class="og-top">
-<header class="intro og-hero">
+<section class="og-sec og-catch" aria-labelledby="catch-h">
+<div class="og-track" id="og-track">
+<div class="og-frame" id="og-stage">
+<div class="og-duo" id="og-duo">
+<header class="og-hero">
 <h1>Your agent can't put an unsourced number in a cold email.</h1>
 <p class="lede">outbound-gates is a Claude Code plugin for agents that draft outbound. Every number in a draft needs
 the exact sentence from the company's own site, a calculation the gate recomputes, or one of your own facts. Send,
 reply and forward are blocked; a person sends.</p>
-<p class="og-acts"><a class="jump ask" href="#try-h">Try it on your prospect ↓</a><a class="jump og-watch" href="#catch-h">Watch it catch a number ↓</a></p>
+<p class="og-acts"><a class="jump ask" href="#try-h">Try it on your prospect ↓</a></p>
 </header>
-
-<section class="og-sec" aria-labelledby="catch-h">
-<h2 id="catch-h">The gate catches a number</h2>
-<p class="og-note">A real run on the bundled demo company, fictional like every company here. The output below is
-the gate's own, rebuilt from the code on every change. Commands are shown as <code>gate</code>, the shortcut setup
-installs.</p>
-<div class="og-catch">
-<article class="og-draft" aria-label="The agent's draft"><p class="to">Draft to __TO__</p>__DRAFT__</article>
-<div class="og-steps">
-<div aria-live="polite" class="og-run">
-__STEPS__
+<div class="og-mailwrap"><p class="og-cap">What the agent wrote</p>
+<article class="og-mail" aria-label="The agent's draft">
+<div class="og-mail-h"><span>To <b>__TO__</b></span></div>
+<div class="og-mail-b">__DRAFT__</div>
+<div class="og-mail-f"><span class="og-send">__LOCK_ICON__Send</span><span class="og-lock" id="og-lock">__LOCKS__</span></div>
+</article></div>
+<div class="og-pagewrap"><p class="og-cap">What their own page says</p>
+<article class="og-page" aria-label="The company's pricing page">
+<div class="og-bar" aria-hidden="true"><i></i><i></i><i></i><span class="og-url">__URL_SHOWN__</span></div>
+<div class="og-page-b"><h3>Pricing</h3><p class="og-q">__QUOTE_HTML__</p>
+<p class="og-saved">__SAVE_ICON__The gate saved a copy of this page with its hash.</p></div>
+</article></div>
+<svg class="og-wire" id="og-wire" aria-hidden="true"><path id="og-path"/></svg><span class="og-badge" id="og-badge" aria-hidden="true">≠</span>
 </div>
-<div class="og-ctl"><button type="button" class="primary" id="og-next">Record the source →</button><button type="button" id="og-reset">Start over</button><span class="fine og-hint" id="og-hint">Step 1 of 3 from one real run.</span></div>
+<div class="og-foot">
+<h2 id="catch-h" class="og-sr">The gate catches a wrong number</h2>
+<div class="og-dots" role="group" aria-label="Steps"><button type="button" data-go="0" aria-label="Step 1: Check"></button><button type="button" data-go="1" aria-label="Step 2: Find the source"></button><button type="button" data-go="2" aria-label="Step 3: Fix and check"></button></div>
+<ol class="og-story" aria-live="polite">__STORY__</ol>
+<p class="fine og-real">A real gate run on the bundled demo company (fictional, like every company here), rebuilt from the code on every change.</p>
+</div>
+</div>
+</div>
+<p class="og-note og-edge">What it doesn't check: <q>__UNCHECKED__</q> has no number in it, so it passes. A comparison like that is yours to check.</p>
+<details class="og-printed" id="og-printed" open><summary><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 3l4 4-4 4"/></svg>What the gate printed</summary>
+__OUTS__
+</details>
 <div class="og-live" id="og-live">
-<div class="og-ctl"><button type="button" id="og-live-start">Run it live in your browser</button>
+<div class="og-row"><button type="button" class="og-btn" id="og-live-start">Try it yourself</button>
 <span class="fine og-hint" id="og-live-hint">Edit the draft and the real gate checks it, in this page. Loads Python once, about 10 MB.</span></div>
 <div class="og-live-run" id="og-live-run" hidden>
-<label class="og-live-label" for="og-live-draft">The draft. Change the number, delete it, add your own.</label>
-<textarea id="og-live-draft" rows="9" spellcheck="false"></textarea>
-<div class="og-ctl"><button type="button" class="primary" id="og-live-check">Check the draft</button>
-<button type="button" id="og-live-record">Record the source</button>
-<span class="fine og-hint" id="og-live-state">The source isn't recorded yet.</span></div>
-<figure class="term og-live-out"><pre id="og-live-out" aria-live="polite"></pre></figure>
+<p class="fine og-hint">Check the draft, record the page's sentence, then fix the number. Or write your own.</p>
+<div class="og-duo">
+<div><article class="og-mail" aria-label="Your draft">
+<div class="og-mail-h"><span>To <b>__TO__</b></span></div>
+<textarea id="og-live-draft" aria-label="Your draft" rows="9" spellcheck="false">__LIVE_DRAFT__</textarea>
+<div class="og-mail-f"><button type="button" class="og-btn" id="og-live-check">Check the draft</button>
+<span class="og-send">__LOCK_ICON__Send</span><span class="og-lock" id="og-live-state">Not checked yet</span></div>
+</article></div>
+<div><article class="og-page" aria-label="The company's pricing page">
+<div class="og-bar" aria-hidden="true"><i></i><i></i><i></i><span class="og-url">__URL_SHOWN__</span></div>
+<div class="og-page-b"><p class="og-q">__QUOTE_HTML__</p>
+<button type="button" class="og-btn" id="og-live-record">Record this sentence</button></div>
+</article></div>
 </div>
-</div>
+<figure class="term og-term og-live-out"><pre id="og-live-out" aria-live="polite"></pre></figure>
 </div>
 </div>
 <p class="og-note og-also">The whole pipeline (source, qualify, draft, gate, pre-send and CRM on seven demo accounts):
 <a href="pipeline.html">the demo report</a>. Code, docs and design notes: <a href="__REPO__">github.com/howardhwt/outbound-gates</a>.</p>
 </section>
-</div>
-
 <section class="og-sec" aria-labelledby="try-h">
 <h2 id="try-h">Try it on your prospect</h2>
 <p class="og-note">In Claude Code. Nothing goes to Gmail until you set it up on your own outbound folder.</p>
 <ol class="og-try">
 <li><span class="what">Install the plugin</span><span class="why">Two commands, once.</span>
 <span class="cmds">__CMD_ADD____CMD_INSTALL__</span></li>
-<li><span class="what">Optional: the run above, on your machine</span><span class="why">Two minutes, offline, on the
+<li><span class="what">Optional: a run like the one above, on your machine</span><span class="why">Two minutes, offline, on the
 bundled demo company.</span><span class="cmds">__CMD_TRY__</span></li>
 <li class="og-goal"><span class="what">First catch on your prospect</span><span class="why">About five minutes. It makes a
 new folder, your agent writes the email it would normally write, and the gate refuses any number it can't back up
@@ -300,18 +449,50 @@ until the source is recorded.</span><span class="cmds">__CMD_START__</span></li>
 <nav aria-label="Elsewhere"><a href="https://www.linkedin.com/in/howardhwt">LinkedIn</a><a href="https://github.com/howardhwt">GitHub</a><a href="__REPO__">outbound-gates repo</a></nav></footer>
 <script>
 (function(){
-var steps=[].slice.call(document.querySelectorAll('.og-step')),i=1,next=document.getElementById('og-next'),
-reset=document.getElementById('og-reset'),hint=document.getElementById('og-hint'),ctl=next.parentNode;
-function sync(){var done=i>=steps.length;next.hidden=done;reset.disabled=i<=1;
-if(!done)next.textContent=steps[i].getAttribute('data-run')+' →';
-hint.textContent=done?'All three steps from one real run.':'Step '+i+' of 3 from one real run.';}
-next.onclick=function(){if(i<steps.length){steps[i].classList.add('shown');i++;sync();
-var smooth=!matchMedia('(prefers-reduced-motion: reduce)').matches;
-(i>=steps.length?reset:next).focus({preventScroll:true});
-ctl.scrollIntoView({behavior:smooth?'smooth':'auto',block:'nearest'});}};
-reset.onclick=function(){steps.forEach(function(s,n){if(n)s.classList.remove('shown')});i=1;sync();
-steps[0].scrollIntoView({block:'nearest'});next.focus({preventScroll:true});};
-var NL=String.fromCharCode(10),L=function(id){return document.getElementById(id)},py=null,session=null;
+var L=function(id){return document.getElementById(id)},NL=String.fromCharCode(10),
+stage=L('og-stage'),track=L('og-track'),duo=L('og-duo'),path=L('og-path'),badge=L('og-badge'),printed=L('og-printed'),
+num=stage.querySelector('.og-num'),mark=stage.querySelector('.og-mark'),
+dots=[].slice.call(stage.querySelectorAll('[data-go]')),story=[].slice.call(stage.querySelectorAll('.og-story li')),
+reduce=matchMedia('(prefers-reduced-motion: reduce)').matches,cur=-1,root=document.documentElement;
+printed.removeAttribute('open');
+function wire(){var d=duo.getBoundingClientRect(),a=num.getBoundingClientRect(),b=mark.getBoundingClientRect(),p,x1,y1,x2,y2,m;
+if(b.top>a.bottom+20){x1=a.left+a.width/2-d.left;y1=stage.querySelector('.og-mail').getBoundingClientRect().bottom-d.top;x2=b.left+b.width/2-d.left;y2=stage.querySelector('.og-page').getBoundingClientRect().top-d.top;m=(y1+y2)/2;
+p='M'+x1+' '+y1+' C'+x1+' '+m+' '+x2+' '+m+' '+x2+' '+y2;}
+else{var ltr=b.left>a.left;x1=(ltr?a.right:a.left)-d.left;y1=a.top+a.height/2-d.top;x2=(ltr?b.left:b.right)-d.left;y2=b.top+b.height/2-d.top;m=(x1+x2)/2;
+p='M'+x1+' '+y1+' C'+m+' '+y1+' '+m+' '+y2+' '+x2+' '+y2;}
+path.setAttribute('d',p);var mid=path.getPointAtLength(path.getTotalLength()/2);badge.style.left=mid.x+'px';badge.style.top=mid.y+'px';}
+function go(i){if(i===cur)return;cur=i;stage.setAttribute('data-s',i);printed.className='og-printed s'+i;
+story.forEach(function(li,j){li.classList.toggle('on',j===i)});
+dots.forEach(function(b,j){if(j===i)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');b.classList.toggle('done',j<i)});
+badge.textContent=i===2?'=':'≠';
+var t0=performance.now();(function f(){wire();if(performance.now()-t0<900)requestAnimationFrame(f)})();
+if(i===1&&!reduce){var len=path.getTotalLength();path.style.transition='none';path.style.strokeDasharray=len;path.style.strokeDashoffset=len;
+path.getBoundingClientRect();path.style.transition='stroke-dashoffset 900ms cubic-bezier(.16,1,.3,1)';path.style.strokeDashoffset=0;
+setTimeout(function(){if(cur===1){path.style.transition='';path.style.strokeDasharray='';path.style.strokeDashoffset=''}},950);}}
+function pinned(){return root.classList.contains('og-pin')}
+var NAVH=72,stick=0,span=1;
+function fit(){root.classList.add('og-pin');root.style.removeProperty('--og-top');root.style.removeProperty('--og-track');
+var h=stage.offsetHeight,wide=innerWidth>=900,mail=stage.querySelector('.og-mailwrap').getBoundingClientRect().top-stage.getBoundingClientRect().top;
+var ok=wide?h<=innerHeight+1:h-mail+NAVH+8<=innerHeight;
+var most=0;story.forEach(function(li){most=Math.max(most,li.offsetHeight)});stage.querySelector('.og-story').style.minHeight=most+'px';
+if(!ok){root.classList.remove('og-pin');wire();return;}
+stick=wide?Math.min(0,innerHeight-h):Math.min(0,NAVH+8-mail);span=Math.round(innerHeight*2.4);
+root.style.setProperty('--og-top',stick+'px');root.style.setProperty('--og-track',(h+span)+'px');wire();}
+var auto=-1;
+var hero=stage.querySelector('.og-hero');
+function onScroll(){var k;if(innerWidth<900){var hb=hero.getBoundingClientRect().bottom;hero.style.opacity=Math.min(1,Math.max(0,(hb-NAVH)/160));}else hero.style.opacity='';
+if(pinned()){var p=Math.min(1,Math.max(0,(stick-track.getBoundingClientRect().top)/span));k=p<0.34?0:p<0.67?1:2;}
+else{var r=stage.querySelector('.og-page').getBoundingClientRect(),h=innerHeight;k=r.top>h*0.75?0:r.bottom>h*0.6?1:2;}
+if(k!==auto){auto=k;go(k);}}
+dots.forEach(function(b){b.onclick=function(){var k=+b.getAttribute('data-go');
+if(!pinned()){go(k);stage.querySelector(k?'.og-pagewrap':'.og-mailwrap').scrollIntoView({block:'center',behavior:reduce?'auto':'smooth'});return;}
+var top=track.getBoundingClientRect().top+scrollY-stick;
+scrollTo({top:top+span*[0.15,0.5,0.85][k],behavior:reduce?'auto':'smooth'});}});
+go(0);fit();onScroll();
+addEventListener('scroll',onScroll,{passive:true});
+addEventListener('resize',function(){fit();onScroll();});
+if(document.fonts)document.fonts.ready.then(fit);
+var py=null,session=null;
 L('og-live-start').onclick=function(){var b=this;b.disabled=true;b.textContent='Loading Python…';
 var t=document.createElement('script');t.src='__PYODIDE__pyodide.js';
 t.onerror=function(){fail("the Python runtime didn’t download")};
@@ -319,32 +500,31 @@ t.onload=function(){loadPyodide({indexURL:'__PYODIDE__'}).then(function(p){py=p;
 .then(function(r){if(!r.ok)throw new Error('live.zip: '+r.status);return r.arrayBuffer()})
 .then(function(buf){py.unpackArchive(buf,'zip',{extractDir:'/og'});
 session=py.runPython(["import sys","sys.path.insert(0, '/og')","from demo.live import Session","Session()"].join(NL));
-L('og-live-draft').value=session.draft;L('og-live-run').hidden=false;b.parentNode.hidden=true;L('og-live-draft').focus();})
+L('og-live-run').hidden=false;b.parentNode.hidden=true;L('og-live-draft').focus();})
 .catch(function(e){fail(e.message||String(e))});};document.head.appendChild(t);
-function fail(m){b.disabled=false;b.textContent='Run it live in your browser';
-L('og-live-hint').textContent='Couldn’t start Python here ('+m+'). The replay above is the same gate, run when the page was built.';}};
-function show(r,tag){var out=L('og-live-out');out.textContent='';var h=document.createElement('span');
-h.className='og-tag'+(tag==='draft stopped'?' stop':tag==='draft passes'?' pass':'');h.textContent=tag;
-out.appendChild(h);out.appendChild(document.createTextNode(NL+r.get('output')));r.destroy();}
-L('og-live-check').onclick=function(){var r=session.check(L('og-live-draft').value);
-show(r,r.get('passed')?'draft passes':'draft stopped');};
-L('og-live-record').onclick=function(){var r=session.record(),ok=r.get('recorded');show(r,ok?'source stored':'not recorded');
-if(ok){L('og-live-state').textContent='Source recorded: the pricing page’s own sentence for $0.006.';this.disabled=true;}};
-addEventListener('beforeprint',function(){[].forEach.call(document.querySelectorAll('.og-more'),function(d){d.open=true})});
+function fail(m){b.disabled=false;b.textContent='Try it yourself';
+L('og-live-hint').textContent='Couldn’t start Python here ('+m+'). The run above is the same gate, run when the page was built.';}};
+function show(r){var out=r.get('output');L('og-live-out').textContent=out;r.destroy();return out;}
+L('og-live-check').onclick=function(){var r=session.check(L('og-live-draft').value),ok=r.get('passed'),out=show(r),
+why=out.split(NL).filter(function(l){return l.indexOf('- ')===0})[0];
+L('og-live-run').classList.toggle('passed',ok);
+L('og-live-state').textContent=ok?'Unlocked: a person sends it':'Locked: '+(why?why.slice(2).replace(/^[a-z_]+: /,''):'the draft didn’t pass');};
+L('og-live-record').onclick=function(){var r=session.record(),ok=r.get('recorded');show(r);
+if(ok){this.disabled=true;this.textContent='Sentence recorded';}};
+addEventListener('beforeprint',function(){printed.open=true;[].forEach.call(document.querySelectorAll('.og-more'),function(d){d.open=true})});
 [].forEach.call(document.querySelectorAll('.og-cmd'),function(row){
 var b=document.createElement('button');b.type='button';b.className='og-copy';b.textContent='copy';
 b.setAttribute('aria-label','Copy: '+row.textContent);
 b.onclick=function(){var t=row.querySelector('code').textContent,done=function(m){b.textContent=m;setTimeout(function(){b.textContent='copy'},2000)};
 (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){done('copied')},function(){done('select the text')});};
 row.appendChild(b);});
-sync();
 })();
 </script></body></html>
 """
 
 
 def _render_output(text: str) -> str:
-    """The gate's output, line by line: the problem and the verdict in Chalk, the rest in Smoke.
+    """The gate's output, line by line: the problem, a refusal and the verdict in Chalk, the rest in Smoke.
 
     The how-to-fix instructions the gate prints after a problem stay on the page, folded under a summary,
     so the problem and the verdict are what a reader (on a phone especially) sees first."""
@@ -356,7 +536,7 @@ def _render_output(text: str) -> str:
     def one(line: str) -> str:
         if line.strip() in ("BLOCKED", "PASS"):
             return f'<span class="res verdict">{escape(line.strip())}</span>'
-        cls = "res hit" if line.startswith("- ") else "res"
+        cls = "res hit" if line.startswith(("- ", "refused:")) else "res"
         return f'<span class="{cls}">{escape(line)}</span>'
 
     out = []
@@ -379,16 +559,34 @@ def _command_row(command: str) -> str:
 
 UNCHECKED = "our rate sits below that"  # a comparison with no number in the demo draft: the gate lets it through
 
+LOCK_ICON = ('<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">'
+             '<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path class="og-shackle" d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>')
+SAVE_ICON = ('<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">'
+             '<path d="M3 2.5h6l2 2v7H3z"/><path d="M5 2.5v3h4v-3"/></svg>')
+STEP_NAMES = ["Check", "Find the source", "Fix and check"]
 
-def _after_pass(run: dict) -> str:
-    """What the pass rests on, and what the gate does not check (PRODUCT.md: honest edges)."""
-    if UNCHECKED not in run["draft"]:
-        raise SystemExit(f"the demo draft no longer says {UNCHECKED!r}; update the page's note on what the gate skips")
-    return (f'<p class="og-note og-after">The number now rests on the exact sentence from the company\'s own page: '
-            f'<q>{escape(run["page_sentence"])}</q> (<code>{escape(run["url"])}</code>). The gate stored the page with '
-            f'its hash and checks it again on every draft.</p>'
-            f'<p class="og-note og-after">What it doesn\'t check: <q>{UNCHECKED}</q> has no number in it, so it passes. '
-            f'A comparison like that is yours to check.</p>')
+
+def _story(run: dict) -> list[str]:
+    """One sentence per step, in plain words; the gate's own output for each sits under "What the gate printed"."""
+    return [f"The agent got the competitor's price wrong. The gate stopped the draft: nothing on file backs up {WRONG}.",
+            f"Their own page says {RIGHT}, not {WRONG}. The gate refuses to record a number the page doesn't say.",
+            f"The agent fixes it to {RIGHT}, records the page's sentence and checks again. The number matches its "
+            "source, so the draft passes. A person sends it; the agent can't."]
+
+
+def _number(run: dict) -> str:
+    """The draft's number, written so step 3 can grow the missing digit in: $0.0[0]6."""
+    head = os.path.commonprefix([WRONG, RIGHT])
+    tail = WRONG[len(head):]
+    added = RIGHT[len(head):len(RIGHT) - len(tail)]
+    if head + added + tail != RIGHT or not added:
+        raise SystemExit(f"{WRONG} and {RIGHT} must differ by inserted digits for the page's fix animation")
+    return f'<span class="og-num">{escape(head)}<span class="og-zero">{escape(added)}</span>{escape(tail)}</span>'
+
+
+def _terminal(pairs: list[tuple[str, str]]) -> str:
+    body = "".join(f'<span class="cmd">{escape(cmd)}</span>{_render_output(out)}' for cmd, out in pairs)
+    return f'<figure class="term og-term"><pre>{body}</pre></figure>'
 
 
 def nav_links(current: str) -> str:
@@ -401,22 +599,32 @@ def nav_links(current: str) -> str:
 
 
 def build_page(run: dict) -> str:
-    blocks = []
-    for n, step in enumerate(run["steps"]):
-        tag = ('<span class="og-tag stop">draft stopped</span>' if step["exit"] == 1 else
-               '<span class="og-tag pass">draft passes</span>' if "PASS" in step["output"] else
-               '<span class="og-tag">source stored</span>')
-        blocks.append(
-            f'<div class="og-step{" shown first" if n == 0 else ""}" data-run="{escape(step["label"])}">'
-            f'<p class="head">{escape(step["label"])} {tag}</p>'
-            f'<figure class="term"><pre><span class="cmd">{escape(_short_command(step, run))}</span>'
-            f'{_render_output(step["output"])}</pre></figure>'
-            + (_after_pass(run) if n == len(run["steps"]) - 1 else "") + '</div>')
-    paragraphs = [p for p in run["draft"].strip().split("\n\n")]
-    draft = "".join("<p>" + escape(p).replace("\n", "<br>").replace("$0.006", '<span class="og-num">$0.006</span>')
-                    + "</p>" for p in paragraphs)
+    """The gate page, from run_wrong_number(): the draft beside the company's page, three steps, the gate's output."""
+    if UNCHECKED not in run["right_draft"]:
+        raise SystemExit(f"the demo draft no longer says {UNCHECKED!r}; update the page's note on what the gate skips")
+    paragraphs = run["wrong_draft"].strip().split("\n\n")
+    draft = "".join(
+        f'<p{"" if WRONG in p else " class=\"og-x\""}>'
+        + escape(p).replace("\n", "<br>").replace(escape(WRONG), _number(run)) + "</p>" for p in paragraphs)
+    quote = escape(run["page_sentence"]).replace(escape(RIGHT), f'<span class="og-mark">{escape(RIGHT)}</span>', 1)
+    locks = "".join(f"<span>{escape(t)}</span>" for t in
+                    (f"Locked: nothing backs up {WRONG}", f"Locked: {WRONG} isn't on their page", "Unlocked: a person sends it"))
+    story = "".join(f'<li data-t="{n}"><small>{n + 1} · {name}</small><p>{escape(text)}</p></li>'
+                    for n, (name, text) in enumerate(zip(STEP_NAMES, _story(run))))
+    stopped, refused, recorded, passed = run["steps"]
+    check = f"gate check draft.txt --to {run['to']}"
+    record = f"gate record --contact {run['to']} --url {run['url']} --quote '{quickstart.QUOTE}' --value"
+    printed = [[(check, stopped["output"])], [(f"{record} '{WRONG}'", refused["output"])],
+               [(f"{record} '{RIGHT}'", recorded["output"]), (check, passed["output"])]]
+    outs = ('<p class="fine og-hint">Commands are shown as <code>gate</code>, the shortcut setup installs.</p>'
+            + "".join(f'<div class="og-out" data-o="{n}"><p class="lbl">{n + 1} · {STEP_NAMES[n]}</p>{_terminal(pairs)}</div>'
+                      for n, pairs in enumerate(printed)))
     nav = nav_links(current="page")
-    return (PAGE.replace("__STEPS__", "\n".join(blocks)).replace("__DRAFT__", draft).replace("__NAV__", nav)
+    return (PAGE.replace("__DRAFT__", draft).replace("__NAV__", nav).replace("__LOCKS__", locks)
+            .replace("__STORY__", story).replace("__OUTS__", outs).replace("__QUOTE_HTML__", quote)
+            .replace("__URL_SHOWN__", escape(run["url"].split("://", 1)[-1]))
+            .replace("__LIVE_DRAFT__", escape(run["wrong_draft"].strip())).replace("__UNCHECKED__", UNCHECKED)
+            .replace("__LOCK_ICON__", LOCK_ICON).replace("__SAVE_ICON__", SAVE_ICON)
             .replace("__TO__", escape(run["to"])).replace("__PYODIDE__", PYODIDE).replace("__REPO__", REPO).replace("__PORTFOLIO__", PORTFOLIO)
             .replace("__CMD_ADD__", _command_row("/plugin marketplace add howardhwt/outbound-gates"))
             .replace("__CMD_INSTALL__", _command_row("/plugin install outbound-gates@outbound-gates"))
@@ -459,15 +667,18 @@ def build(out: Path, clip: Path | None) -> dict:
     kinds = [(s["kind"], s["exit"]) for s in run["steps"]]
     if kinds != [("check", 1), ("record", 0), ("check", 0)]:
         raise SystemExit(f"the gate didn't behave as the page says (blocked, recorded, passed): {kinds}")
+    story = run_wrong_number()
+    check_wrong_number(story)
     out.mkdir(parents=True, exist_ok=True)
     svg = build_clip(run)
-    (out / "index.html").write_text(build_page(run), encoding="utf-8")
+    (out / "index.html").write_text(build_page(story), encoding="utf-8")
     (out / "catch.svg").write_text(svg, encoding="utf-8")
     (out / "pipeline.html").write_text(build_pipeline(), encoding="utf-8")
     (out / "live.zip").write_bytes(build_live_bundle())
     (out / ".nojekyll").write_text("", encoding="utf-8")
     if clip:
         clip.write_text(svg, encoding="utf-8")
+    run["story"] = story
     return run
 
 
