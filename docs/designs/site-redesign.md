@@ -49,6 +49,12 @@ Checked: 558 tests pass. Viewed at 1440px and 390px with the portfolio served at
    - Tests cover the Python entry point, not the in-browser run.
    - Separate PR.
 5. Optional: run `/impeccable critique` or `/impeccable polish` on the page once the plugin loads.
+6. **The catch, redesigned** (built). The three stacked terminal logs became one picture: the agent's draft beside the company's own pricing page, the gate's verdict drawn between their numbers.
+   - The story is a wrong number: the draft says $0.06, the page says $0.006. `run_wrong_number()` runs it for real: stopped, recording $0.06 refused (`value not in quote`), fixed to $0.006, recorded, passed. The build refuses to publish if the gate stops behaving that way.
+   - The frame pins while the visitor scrolls through the three steps, so they set the pace. If it doesn't fit the screen, it doesn't pin and the dots step through it.
+   - The email's own Send button, at the bottom like Gmail, shows the lock: locked until the number matches its source, then "a person sends it".
+   - The gate's own output for each step is under "What the gate printed" (open without JavaScript). "Try it yourself" uses the same two cards with the draft editable.
+   - The README clip and `/outbound-gates:try` keep the simpler quickstart run ($0.006 with no source, recorded, passed).
 
 ## Local preview
 

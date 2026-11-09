@@ -49,7 +49,7 @@ def test_the_bundle_is_the_same_every_build():
 
 
 def test_the_page_loads_python_only_when_asked():
-    page = site.build_page(site.run_catch())
+    page = site.build_page(site.run_wrong_number())
     assert 'id="og-live-start"' in page and "live.zip" in page
     assert '<script src="' not in page  # nothing loads up front; the runtime is added on click
     assert site.PYODIDE.startswith("https://cdn.jsdelivr.net/pyodide/v0.") and site.PYODIDE in page  # pinned version
